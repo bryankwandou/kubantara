@@ -1,36 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kubantara
 
-## Getting Started
+Dunia kubus terbuka untuk anak, dimainkan langsung dari peramban. Sebuah pulau
+prosedural berisi bukit, pantai, danau, dan pepohonan yang seluruhnya tersusun
+dari balok warna-warni. Tugas pemain sederhana: berjalan, melompat, dan
+menemukan dua puluh bintang emas yang tersebar di seluruh pulau. Tidak ada
+musuh, tidak ada kekalahan, tidak ada iklan maupun pembelian apa pun.
 
-First, run the development server:
+## Cara menjalankan di komputer sendiri
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Lalu buka http://localhost:3000. Halaman utama berisi pengantar, tombol kuning
+membawa ke arena main di `/play`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Kontrol
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Laptop: W A S D untuk berjalan, spasi untuk melompat, Q dan E memutar kamera.
+- Ponsel dan tablet: lingkaran kiri untuk berjalan, tombol besar kanan untuk melompat.
 
-## Learn More
+## Teknologi
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js dengan App Router dan Tailwind CSS
+- Three.js untuk dunia voxel (InstancedMesh per jenis balok, terrain dari value noise)
+- Framer Motion untuk animasi halaman muka
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Seluruh kode asli dan bebas dipakai ulang. Tidak ada aset pihak ketiga.
