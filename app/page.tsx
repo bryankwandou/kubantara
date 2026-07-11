@@ -79,10 +79,11 @@ export default function Landing() {
             custom={2}
             className="mx-auto mt-6 max-w-xl text-lg text-slate-300"
           >
-            Sebuah pulau luas yang tersusun dari kubus warna-warni. Anak berjalan,
-            memanjat bukit, menyusuri pantai, dan mencari dua puluh bintang yang
-            tersembunyi. Tidak ada musuh, tidak ada kalah, tidak ada iklan. Cukup
-            buka dari peramban, langsung main.
+            Sebuah pulau luas dari kubus warna-warni. Anak membangun dan
+            membongkar balok, merapal sihir yang menumbuhkan pohon atau
+            membentang jembatan pelangi, ditemani hewan peliharaan, dan menaiki
+            tunggangan menyeberangi bukit saat langit berganti dari pagi ke
+            malam. Tidak ada musuh, tidak ada kalah, tidak ada iklan.
           </motion.p>
           <motion.div
             variants={fadeUp}
@@ -124,16 +125,16 @@ export default function Landing() {
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {[
             {
-              t: "Aman sepenuhnya",
-              d: "Tidak ada pertarungan, obrolan orang asing, pembelian dalam aplikasi, ataupun tautan keluar. Anak hanya berjalan dan mengumpulkan bintang.",
+              t: "Bangun sesukanya",
+              d: "Delapan warna balok siap dipasang dan dibongkar. Anak menyusun rumah, menara, atau jembatan sendiri, lalu merapal empat sihir untuk menumbuhkan pohon dan menebar bunga.",
             },
             {
-              t: "Tanpa pasang apa pun",
-              d: "Jalan langsung di Chrome, Safari, atau peramban ponsel. Ada tombol sentuh untuk layar HP dan tablet, ada keyboard untuk laptop.",
+              t: "Teman dan tunggangan",
+              d: "Ada hewan peliharaan kotak yang setia mengikuti ke mana pun, tunggangan yang bisa dinaiki untuk melaju lebih cepat, serta satwa liar yang berkeliaran di seluruh pulau.",
             },
             {
-              t: "Dunia selalu utuh",
-              d: "Pulau dibangun dari ribuan kubus dengan bukit, pantai, danau, dan pepohonan. Cukup luas untuk dijelajahi berulang kali tanpa bosan.",
+              t: "Aman dan langsung jalan",
+              d: "Tidak ada pertarungan, obrolan orang asing, maupun pembelian. Buka di peramban ponsel atau laptop, ada tombol sentuh sekaligus dukungan keyboard.",
             },
           ].map((f, i) => (
             <motion.div
@@ -169,8 +170,8 @@ export default function Landing() {
           <div className="mt-14 space-y-6">
             {[
               ["Buka halaman main", "Tekan tombol kuning di atas. Dunia dimuat dalam hitungan detik, tanpa daftar akun."],
-              ["Gerakkan si kecil kotak", "Di laptop pakai tombol W A S D dan spasi untuk melompat. Di ponsel pakai lingkaran kiri untuk jalan dan tombol besar kanan untuk lompat."],
-              ["Kumpulkan dua puluh bintang", "Bintang emas berputar tersebar di seluruh pulau. Temukan semuanya dan layar perayaan akan muncul."],
+              ["Jelajah, bangun, dan rapal sihir", "Gerakkan si kotak dengan W A S D atau lingkaran sentuh. Pilih warna balok lalu tekan Bangun, coba tombol sihir di sisi kiri, dan naiki tunggangan lewat tombol Naik."],
+              ["Kumpulkan dua puluh empat bintang", "Bintang emas berputar tersebar di seluruh pulau. Temukan semuanya dan layar perayaan akan muncul."],
             ].map(([t, d], i) => (
               <motion.div
                 key={t}
