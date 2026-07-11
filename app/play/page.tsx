@@ -2,13 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { createGame } from "@/lib/voxel-game";
+import { createGame, PALETTE, type Spell } from "@/lib/voxel-game";
+
+const SPELLS: { id: Spell; label: string }[] = [
+  { id: "jembatan", label: "Jembatan" },
+  { id: "bunga", label: "Bunga" },
+  { id: "kembang-api", label: "Kembang api" },
+  { id: "pohon", label: "Tumbuh pohon" },
+];
 
 export default function PlayPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<ReturnType<typeof createGame> | null>(null);
   const padRef = useRef<HTMLDivElement>(null);
-  const [stars, setStars] = useState({ got: 0, total: 20 });
+  const [stars, setStars] = useState({ got: 0, total: 24 });
+  const [time, setTime] = useState<string>("Pagi");
+  const [riding, setRiding] = useState(false);
+  const [colorIdx, setColorIdx] = useState(0);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -18,6 +28,8 @@ export default function PlayPage() {
         setStars({ got, total });
         if (got === total) setDone(true);
       },
+      onTime: (label) => setTime(label),
+      onRide: (r) => setRiding(r),
     });
     gameRef.current = game;
     return () => game.dispose();
@@ -46,10 +58,7 @@ export default function PlayPage() {
     };
     const end = () => {
       active = false;
-      if (gameRef.current) {
-        gameRef.current.touch.x = 0;
-        gameRef.current.touch.y = 0;
-      }
+      if (gameRef.current) { gameRef.current.touch.x = 0; gameRef.current.touch.y = 0; }
     };
     const move = (e: TouchEvent) => active && set(e);
     pad.addEventListener("touchstart", start);
@@ -62,38 +71,94 @@ export default function PlayPage() {
     };
   }, []);
 
-  return (
-    <main className="fixed inset-0 overflow-hidden bg-sky-300">
-      <canvas ref={canvasRef} className="h-full w-full" />
+  const pickColor = (i: number) => {
+    setColorIdx(i);
+    gameRef.current?.setColor(PALETTE[i].hex);
+  };
 
-      {/* HUD */}
-      <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-3">
-        <Link
-          href="/"
-          className="pointer-events-auto rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-slate-800 shadow"
-        >
+  return (
+    <main className="fixed inset-0 select-none overflow-hidden bg-sky-300">
+      <canvas ref={canvasRef} className="h-full w-full touch-none" />
+
+      {/* HUD atas */}
+      <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap items-center gap-2">
+        <Link href="/" className="pointer-events-auto rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-slate-800 shadow">
           Keluar
         </Link>
-        <div className="rounded-xl bg-white/85 px-4 py-2 font-bold text-amber-600 shadow">
-          Bintang {stars.got} / {stars.total}
+        <div className="rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-amber-600 shadow">
+          Bintang {stars.got}/{stars.total}
+        </div>
+        <div className="rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-sky-700 shadow">
+          {time}
         </div>
       </div>
 
-      <div className="pointer-events-none absolute right-4 top-4 hidden rounded-xl bg-white/70 px-4 py-2 text-xs text-slate-700 shadow md:block">
-        WASD jalan · Spasi lompat · Q/E putar kamera
+      <div className="pointer-events-none absolute right-3 top-3 hidden max-w-[220px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
+        WASD jalan · Spasi lompat · Q/E putar kamera. Pilih warna lalu tekan Bangun untuk menaruh balok di depanmu.
       </div>
 
-      {/* kontrol sentuh */}
+      {/* Palet warna balok */}
+      <div className="absolute left-1/2 top-3 flex -translate-x-1/2 gap-1.5 rounded-2xl bg-white/80 p-1.5 shadow">
+        {PALETTE.map((p, i) => (
+          <button
+            key={p.name}
+            onClick={() => pickColor(i)}
+            title={p.name}
+            className={`h-8 w-8 rounded-lg border-2 transition-transform hover:scale-110 ${
+              colorIdx === i ? "border-slate-900 scale-110" : "border-white/60"
+            }`}
+            style={{ backgroundColor: `#${p.hex.toString(16).padStart(6, "0")}` }}
+          />
+        ))}
+      </div>
+
+      {/* Panel sihir (kiri tengah) */}
+      <div className="absolute left-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
+        {SPELLS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => gameRef.current?.cast(s.id)}
+            className="rounded-xl bg-violet-500/90 px-3 py-2 text-xs font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Aksi bangun / bongkar / tunggang (kanan) */}
+      <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
+        <button
+          onClick={() => gameRef.current?.place()}
+          className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+        >
+          Bangun
+        </button>
+        <button
+          onClick={() => gameRef.current?.removeBlock()}
+          className="rounded-xl bg-rose-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+        >
+          Bongkar
+        </button>
+        <button
+          onClick={() => gameRef.current?.toggleRide()}
+          className={`rounded-xl px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
+            riding ? "bg-amber-600" : "bg-amber-500"
+          }`}
+        >
+          {riding ? "Turun" : "Naik"}
+        </button>
+      </div>
+
+      {/* Kontrol sentuh gerak */}
       <div
         ref={padRef}
-        className="absolute bottom-8 left-8 h-32 w-32 rounded-full border-4 border-white/60 bg-white/25 md:hidden"
+        className="absolute bottom-8 left-6 h-32 w-32 touch-none rounded-full border-4 border-white/60 bg-white/25"
       >
         <div className="absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/70" />
       </div>
       <button
-        className="absolute bottom-10 right-8 h-24 w-24 rounded-full border-4 border-white/60 bg-amber-400/80 text-lg font-black text-white shadow-lg md:hidden"
-        onTouchStart={() => gameRef.current && (gameRef.current.touch.jump = true)}
-        onTouchEnd={() => gameRef.current && (gameRef.current.touch.jump = false)}
+        className="absolute bottom-10 right-6 h-24 w-24 rounded-full border-4 border-white/60 bg-sky-400/80 text-base font-black text-white shadow-lg"
+        onTouchStart={(e) => { e.preventDefault(); if (gameRef.current) gameRef.current.touch.jump = true; }}
       >
         LOMPAT
       </button>
@@ -102,14 +167,12 @@ export default function PlayPage() {
         <div className="absolute inset-0 flex items-center justify-center bg-black/40">
           <div className="rounded-3xl bg-white p-8 text-center shadow-2xl">
             <p className="text-3xl font-black text-amber-500">Hebat sekali!</p>
-            <p className="mt-2 text-slate-600">
-              Semua bintang di Kubantara sudah kamu temukan.
-            </p>
+            <p className="mt-2 text-slate-600">Semua bintang di Kubantara sudah kamu temukan.</p>
             <button
               onClick={() => location.reload()}
               className="mt-5 rounded-xl bg-emerald-500 px-6 py-3 font-bold text-white"
             >
-              Main lagi
+              Jelajah lagi
             </button>
           </div>
         </div>
