@@ -48,7 +48,20 @@ export interface GameHooks {
   onStars: (collected: number, total: number) => void;
   onTime: (label: "Pagi" | "Siang" | "Senja" | "Malam") => void;
   onRide: (riding: boolean) => void;
+  onStat?: (stats: GameStats) => void;
 }
+
+export interface GameStats {
+  blocksPlaced: number;
+  blocksRemoved: number;
+  spellsCast: number;
+  rides: number;
+  jumps: number;
+  distance: number;
+  nights: number;
+}
+
+export interface SavedBlock { x: number; y: number; z: number; c: number }
 
 export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -161,7 +174,15 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     new Float32Array(MAX_PLACED * 3), 3
   );
   scene.add(placedMesh);
-  const placed: { x: number; y: number; z: number }[] = [];
+  const placed: { x: number; y: number; z: number; c: number }[] = [];
+  const stats: GameStats = {
+    blocksPlaced: 0, blocksRemoved: 0, spellsCast: 0,
+    rides: 0, jumps: 0, distance: 0, nights: 0,
+  };
+  const bump = (k: keyof GameStats, n = 1) => {
+    stats[k] += n;
+    hooks.onStat?.(stats);
+  };
   const colTop = new Map<string, number>(); // "x,z" -> puncak blok pasang
   const tmpColor = new THREE.Color();
 
@@ -169,16 +190,19 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     for (let i = 0; i < placed.length; i++) {
       m.identity().setPosition(placed[i].x, placed[i].y, placed[i].z);
       placedMesh.setMatrixAt(i, m);
+      tmpColor.setHex(placed[i].c);
+      placedMesh.setColorAt(i, tmpColor);
     }
     placedMesh.count = placed.length;
     placedMesh.instanceMatrix.needsUpdate = true;
+    if (placedMesh.instanceColor) placedMesh.instanceColor.needsUpdate = true;
   }
 
   let placeColor = PALETTE[0].hex;
   function addBlock(x: number, y: number, z: number, color: number) {
     if (placed.length >= MAX_PLACED) return;
     const i = placed.length;
-    placed.push({ x, y, z });
+    placed.push({ x, y, z, c: color });
     m.identity().setPosition(x, y, z);
     placedMesh.setMatrixAt(i, m);
     tmpColor.setHex(color);
@@ -218,7 +242,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     const legL = mk(0.24, 0.6, 0.24, pants, -0.16, 0.3, 0);
     const legR = mk(0.24, 0.6, 0.24, pants, 0.16, 0.3, 0);
     g.add(head, body, armL, armR, legL, legR);
-    return { g, armL, armR, legL, legR };
+    return { g, armL, armR, legL, legR, shirt, pants };
   }
   const kid = buildKid();
   const player = kid.g;
@@ -329,6 +353,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const rainbow = [0xff595e, 0xff924c, 0xffca3a, 0x8ac926, 0x1982c4, 0x6a4c93];
   function castSpell(spell: Spell) {
     sfx.magic();
+    bump("spellsCast");
     const yaw = player.rotation.y;
     const p = player.position;
     if (spell === "kembang-api") {
@@ -369,7 +394,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   window.addEventListener("keyup", ku);
   const touch = { x: 0, y: 0, jump: false };
 
-  let vy = 0, yaw = 0, camYaw = 0, walk = 0;
+  let vy = 0, yaw = 0, camYaw = 0, walk = 0, distAcc = 0;
   const clock = new THREE.Clock();
 
   function resize() {
@@ -425,7 +450,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     sunBall.visible = sunY > -0.1;
     moonBall.visible = sunY < 0.1;
     const label = sunY < 0 ? "Malam" : phase < 0.3 ? "Pagi" : phase < 0.6 ? "Siang" : "Senja";
-    if (label !== lastLabel) { lastLabel = label; hooks.onTime(label); }
+    if (label !== lastLabel) {
+      if (label === "Malam") bump("nights");
+      lastLabel = label; hooks.onTime(label);
+    }
 
     // ----- gerak pemain -----
     let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + touch.x;
@@ -447,6 +475,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         player.position.z = THREE.MathUtils.clamp(nz, -HALF + 2, HALF - 2);
       }
       walk += dt * (riding ? 14 : 10);
+      distAcc += speed * dt;
+      if (distAcc >= 25) { bump("distance", Math.floor(distAcc)); distAcc = 0; }
     } else walk *= 0.8;
 
     let d = yaw - player.rotation.y;
@@ -457,7 +487,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     const g = groundAt(player.position.x, player.position.z);
     vy -= 22 * dt;
     if ((keys.Space || touch.jump) && player.position.y <= g + 0.02) {
-      vy = riding ? 11 : 9; sfx.jump(); touch.jump = false;
+      vy = riding ? 11 : 9; sfx.jump(); touch.jump = false; bump("jumps");
     }
     player.position.y += vy * dt;
     if (player.position.y < g) { player.position.y = g; vy = 0; }
@@ -546,6 +576,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       const c = targetCell();
       addBlock(c.x, c.y, c.z, placeColor);
       sfx.place();
+      bump("blocksPlaced");
     },
     removeBlock() {
       if (!placed.length) return;
@@ -567,6 +598,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       if (top === -Infinity) colTop.delete(key); else colTop.set(key, top);
       rebuildPlaced();
       sfx.breakBlock();
+      bump("blocksRemoved");
     },
     cast(spell: Spell) { castSpell(spell); },
     toggleRide() {
@@ -577,12 +609,26 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       riding = !riding;
       hooks.onRide(riding);
       sfx.mount();
+      if (riding) bump("rides");
       if (!riding) {
         // turun di samping tunggangan
         player.position.x += 1.5;
         player.position.y = groundAt(player.position.x, player.position.z);
       }
       return riding;
+    },
+    getStats(): GameStats { return { ...stats } },
+    getStars() { return collected; },
+    exportBlocks(): SavedBlock[] { return placed.map((p) => ({ x: p.x, y: p.y, z: p.z, c: p.c })); },
+    loadBlocks(blocks: SavedBlock[]) {
+      for (const b of blocks) {
+        if (placed.length >= MAX_PLACED) break;
+        addBlock(Math.round(b.x), Math.round(b.y), Math.round(b.z), b.c);
+      }
+    },
+    setHero(shirtHex: number, pantsHex: number) {
+      kid.shirt.color.setHex(shirtHex);
+      kid.pants.color.setHex(pantsHex);
     },
     dispose() {
       cancelAnimationFrame(raf);

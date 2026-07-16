@@ -101,12 +101,18 @@ export default function Landing() {
                 &rarr;
               </span>
             </Link>
-            <a
-              href="#cara"
+            <Link
+              href="/daftar"
+              className="rounded-2xl border border-cyan-500/60 px-8 py-4 text-lg font-semibold text-cyan-300 transition-colors hover:border-cyan-300 hover:text-cyan-200"
+            >
+              Daftar akun
+            </Link>
+            <Link
+              href="/masuk"
               className="rounded-2xl border border-slate-600 px-8 py-4 text-lg font-semibold text-slate-200 transition-colors hover:border-cyan-400 hover:text-cyan-300"
             >
-              Cara bermain
-            </a>
+              Masuk
+            </Link>
           </motion.div>
         </motion.div>
       </section>
