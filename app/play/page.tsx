@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { createGame, PALETTE, SHAPES, type Spell, type GameStats, type Perks, type Blueprint, type Shape } from "@/lib/voxel-game";
+import { createGame, PALETTE, SHAPES, EMOTES, type Spell, type GameStats, type Perks, type Blueprint, type Shape } from "@/lib/voxel-game";
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
 import { music } from "@/lib/music";
 
@@ -56,7 +56,7 @@ export default function PlayPage() {
   const [showHeroes, setShowHeroes] = useState(false);
   const [showQuests, setShowQuests] = useState(false);
   const [npc, setNpc] = useState<{ name: string; line: string } | null>(null);
-  const [weather, setWeather] = useState<"Cerah" | "Hujan" | "Pelangi">("Cerah");
+  const [weather, setWeather] = useState<"Cerah" | "Hujan" | "Pelangi" | "Salju">("Cerah");
   const [musicOn, setMusicOn] = useState(false);
   const [statsView, setStatsView] = useState<GameStats | null>(null);
   const [timeUp, setTimeUp] = useState(false);
@@ -64,6 +64,8 @@ export default function PlayPage() {
   const [teman, setTeman] = useState(0);
   const questsDoneRef = useRef<Set<string>>(new Set());
   const lastSaveRef = useRef<number>(Date.now());
+  const sejakRef = useRef<number>(0); // penanda balok saudara terakhir yang diterima
+  const emoteRef = useRef<string | null>(null); // emote menunggu dikirim
   const profileRef = useRef<Profile | null>(null);
   const statsRef = useRef<GameStats | null>(null);
   const starsRef = useRef(0);
@@ -180,18 +182,32 @@ export default function PlayPage() {
     const ivBersama = setInterval(async () => {
       if (!bersamaAktif || !profileRef.current) return;
       const pos = game.getPosition();
+      const blokBaru = game.takeOutbox();
       try {
         const res = await fetch("/api/bersama", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...pos, hero: profileRef.current.activeHero }),
+          body: JSON.stringify({
+            ...pos,
+            hero: profileRef.current.activeHero,
+            blokBaru,
+            sejak: sejakRef.current,
+            emote: emoteRef.current ?? undefined,
+          }),
         });
+        emoteRef.current = null; // sudah terkirim, jangan diulang tiap siklus
         const data = await res.json();
         if (!data.enabled) { bersamaAktif = false; return; } // hemat kuota database
         game.setFriends(data.teman ?? []);
         setTeman((data.teman ?? []).length);
+        if (Array.isArray(data.blok) && data.blok.length) {
+          const n = game.applyRemoteBlocks(data.blok);
+          if (n > 0) showToast(`Saudaramu membangun ${n} balok baru`);
+        }
+        if (typeof data.sampai === "number") sejakRef.current = data.sampai;
       } catch {
-        // koneksi putus; coba lagi siklus berikutnya
+        // koneksi putus; balok yang gagal terkirim dikembalikan ke antrean
+        game.requeueOutbox(blokBaru);
       }
     }, 2000);
     const onHide = () => save();
@@ -281,7 +297,10 @@ export default function PlayPage() {
           {time}
         </div>
         <div className="rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-cyan-700 shadow">
-          {weather === "Cerah" ? "☀️ Cerah" : weather === "Hujan" ? "🌧️ Hujan" : "🌈 Pelangi"}
+          {weather === "Cerah" ? "☀️ Cerah"
+            : weather === "Hujan" ? "🌧️ Hujan"
+            : weather === "Salju" ? "❄️ Salju"
+            : "🌈 Pelangi"}
         </div>
         <button
           onClick={() => setShowQuests((v) => !v)}
@@ -290,9 +309,23 @@ export default function PlayPage() {
           📜 Misi {questsDoneRef.current.size}/{QUESTS.length}
         </button>
         {teman > 0 && (
-          <div className="rounded-xl bg-cyan-500/90 px-3 py-2 text-sm font-bold text-white shadow">
-            👨‍👩‍👧 {teman} saudara ikut main
-          </div>
+          <>
+            <div className="rounded-xl bg-cyan-500/90 px-3 py-2 text-sm font-bold text-white shadow">
+              👨‍👩‍👧 {teman} saudara ikut main
+            </div>
+            {/* Emote: hanya lambang tetap, anak tidak bisa mengetik apa pun */}
+            <div className="pointer-events-auto flex gap-1 rounded-xl bg-white/85 px-2 py-1.5 shadow">
+              {EMOTES.map((e) => (
+                <button
+                  key={e}
+                  onClick={() => { emoteRef.current = e; showToast(`Kamu melambaikan ${e}`); }}
+                  className="rounded-lg px-1.5 py-0.5 text-lg transition-transform hover:scale-125 active:scale-95"
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          </>
         )}
         <button
           onClick={toggleMusic}
