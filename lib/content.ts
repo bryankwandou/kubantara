@@ -28,6 +28,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "jelajah-1000", name: "Penjelajah Sejati", desc: "Berjalan sejauh 1000 langkah", xp: 90, stat: "distance", need: 1000 },
   { id: "jelajah-5000", name: "Legenda Kubantara", desc: "Berjalan sejauh 5000 langkah", xp: 300, stat: "distance", need: 5000 },
   { id: "malam-1", name: "Penjaga Malam", desc: "Bertahan sampai malam tiba", xp: 40, stat: "nights", need: 1 },
+  { id: "jinak-1", name: "Sahabat Satwa", desc: "Jinakkan satwa liar pertamamu", xp: 40, stat: "tamed", need: 1 },
+  { id: "jinak-5", name: "Penjaga Rimba", desc: "Jinakkan 5 satwa liar", xp: 150, stat: "tamed", need: 5 },
 ];
 
 export interface Skill {
@@ -105,6 +107,7 @@ export const QUESTS: Quest[] = [
   { id: "cerita-8", name: "Menara Harapan", story: "Pasang 80 balok dan dirikan sesuatu yang bisa dilihat dari jauh.", stat: "blocksPlaced", need: 80, xp: 120 },
   { id: "cerita-9", name: "Penjaga Malam Tiba", story: "Bertahanlah melewati 2 malam. Kegelapan tidak seseram kelihatannya.", stat: "nights", need: 2, xp: 90 },
   { id: "cerita-10", name: "Kembalinya Cahaya", story: "Kumpulkan seluruh 24 bintang dan pulihkan langit Kubantara.", stat: "stars", need: 24, xp: 300 },
+  { id: "cerita-11", name: "Teman dari Rimba", story: "Dekati satwa liar dan jinakkan 3 di antaranya. Mereka akan mengikutimu ke mana pun.", stat: "tamed", need: 3, xp: 90 },
 ];
 
 export const MAX_LEVEL = 20;
