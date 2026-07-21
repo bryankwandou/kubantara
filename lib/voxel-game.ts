@@ -46,6 +46,10 @@ export type Spell = "jembatan" | "bunga" | "kembang-api" | "pohon";
 export type Blueprint = "rumah" | "menara" | "tangga" | "pagar";
 // Bentuk balok yang bisa dipasang anak.
 export type Shape = "kubus" | "kaca" | "lampu" | "setengah";
+// Emote aman: hanya lambang tetap, tidak ada teks yang bisa diketik anak.
+export const EMOTES = ["👋", "❤️", "😀", "🎉", "⭐", "👍"] as const;
+export type Emote = (typeof EMOTES)[number];
+
 export const SHAPES: { id: Shape; name: string }[] = [
   { id: "kubus", name: "Balok" },
   { id: "kaca", name: "Kaca" },
@@ -59,7 +63,7 @@ export interface GameHooks {
   onRide: (riding: boolean) => void;
   onStat?: (stats: GameStats) => void;
   onNpc?: (npc: { name: string; line: string } | null) => void;
-  onWeather?: (w: "Cerah" | "Hujan" | "Pelangi") => void;
+  onWeather?: (w: "Cerah" | "Hujan" | "Pelangi" | "Salju") => void;
 }
 
 export interface GameStats {
@@ -307,10 +311,17 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
   let placeColor = PALETTE[0].hex;
   let placeShape: Shape = "kubus";
+  // antrean balok yang baru dipasang pemain ini, menunggu dikirim ke saudara
+  let outbox: SavedBlock[] = [];
+  // kunci sel yang sudah ada, supaya balok saudara tidak dipasang dua kali
+  const cellKeys = new Set<string>();
+  const cellKey = (x: number, y: number, z: number) => `${x},${y},${z}`;
   function addBlock(x: number, y: number, z: number, color: number, shape: Shape = "kubus") {
     if (placed.length >= MAX_PLACED) return;
+    if (cellKeys.has(cellKey(x, y, z))) return; // sel sudah terisi
     const b = { x, y, z, c: color, s: shape };
     placed.push(b);
+    cellKeys.add(cellKey(x, y, z));
     writeInstance(b);
     flushShapes();
     const key = `${x},${z}`;
@@ -458,7 +469,28 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     penjelajah: 0xe2554d, penyihir: 0x9b5de5, "penjaga-hutan": 0x2f9e44,
     pelaut: 0x1982c4, "penjaga-fajar": 0xffca3a, "bayangan-baik": 0x2b2d42,
   };
-  const friends = new Map<string, { g: THREE.Group; target: THREE.Vector3 }>();
+  const friends = new Map<string, {
+    g: THREE.Group; target: THREE.Vector3; bubble: THREE.Sprite | null; bubbleUntil: number;
+  }>();
+
+  // Gelembung emote digambar ke kanvas lalu dipakai sebagai tekstur sprite.
+  const emoteTextures = new Map<string, THREE.Texture>();
+  function emoteTexture(e: string) {
+    let tex = emoteTextures.get(e);
+    if (tex) return tex;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 128;
+    const g2 = cv.getContext("2d");
+    if (g2) {
+      g2.font = "96px serif";
+      g2.textAlign = "center";
+      g2.textBaseline = "middle";
+      g2.fillText(e, 64, 70);
+    }
+    tex = new THREE.CanvasTexture(cv);
+    emoteTextures.set(e, tex);
+    return tex;
+  }
 
   // ---------- cuaca ----------
   const rainGeo = new THREE.BufferGeometry();
@@ -488,6 +520,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   let weather: "Cerah" | "Hujan" | "Pelangi" = "Cerah";
   let weatherTimer = 25 + Math.random() * 30;
   let weatherDim = 1; // peredup cahaya saat hujan
+  let snowing = false; // hujan sedang turun sebagai salju
 
   // ---------- bintang ----------
   const starGeo = new THREE.OctahedronGeometry(0.45);
@@ -716,6 +749,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     for (const e of friends.values()) {
       e.g.position.lerp(e.target, Math.min(1, dt * 4));
       e.g.rotation.y += dt * 0.6; // berputar pelan agar terlihat hidup
+      if (e.bubble && e.bubble.visible) {
+        if (t > e.bubbleUntil) e.bubble.visible = false;
+        else e.bubble.position.y = 2.6 + Math.sin(t * 4) * 0.1;
+      }
     }
 
     // ----- preview blok -----
@@ -797,12 +834,30 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     }
     weatherDim += ((weather === "Hujan" ? 0.45 : 1) - weatherDim) * Math.min(1, dt * 2);
     if (rain.visible) {
+      // di dataran tinggi bersalju, hujan turun sebagai salju
+      const gx = Math.round(player.position.x) + HALF;
+      const gz = Math.round(player.position.z) + HALF;
+      const bersalju = (heights[gx]?.[gz] ?? 0) > 11;
+      const rm = rain.material as THREE.PointsMaterial;
+      if (bersalju !== snowing) {
+        snowing = bersalju;
+        rm.color.setHex(bersalju ? 0xffffff : 0x9db8d9);
+        rm.size = bersalju ? 0.5 : 0.35;
+        rm.opacity = bersalju ? 0.9 : 0.7;
+        hooks.onWeather?.(bersalju ? "Salju" : weather);
+      }
       rain.position.set(player.position.x, player.position.y, player.position.z);
       const pos = rainGeo.getAttribute("position") as THREE.BufferAttribute;
+      // salju melayang turun jauh lebih pelan daripada hujan
+      const fall = dt * (bersalju ? 6 : 24);
       for (let i = 0; i < pos.count; i++) {
-        let y = pos.getY(i) - dt * 24;
+        let y = pos.getY(i) - fall;
         if (y < 0) y = 30;
         pos.setY(i, y);
+        if (bersalju) {
+          // sedikit goyangan agar salju terlihat melayang, bukan jatuh lurus
+          pos.setX(i, pos.getX(i) + Math.sin(t * 1.5 + i) * dt * 0.6);
+        }
       }
       pos.needsUpdate = true;
     }
@@ -819,7 +874,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     place() {
       if (riding) return;
       const c = targetCell();
+      const before = placed.length;
       addBlock(c.x, c.y, c.z, placeColor, placeShape);
+      if (placed.length === before) return; // sel sudah terisi
+      outbox.push({ x: c.x, y: c.y, z: c.z, c: placeColor, s: placeShape });
       sfx.place();
       bump("blocksPlaced");
     },
@@ -836,6 +894,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       }
       if (bi < 0) return;
       const rem = placed.splice(bi, 1)[0];
+      cellKeys.delete(cellKey(rem.x, rem.y, rem.z));
       // hitung ulang puncak kolom
       const key = `${rem.x},${rem.z}`;
       let top = -Infinity;
@@ -871,18 +930,41 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       for (const b of blocks) {
         if (placed.length >= MAX_PLACED) break;
         const s: Shape = b.s && b.s in shapeMeshes ? b.s : "kubus";
-        placed.push({ x: Math.round(b.x), y: Math.round(b.y), z: Math.round(b.z), c: b.c, s });
-        const key = `${Math.round(b.x)},${Math.round(b.z)}`;
-        colTop.set(key, Math.max(colTop.get(key) ?? -Infinity, Math.round(b.y)));
+        const x = Math.round(b.x), y = Math.round(b.y), z = Math.round(b.z);
+        if (cellKeys.has(cellKey(x, y, z))) continue;
+        placed.push({ x, y, z, c: b.c, s });
+        cellKeys.add(cellKey(x, y, z));
+        colTop.set(`${x},${z}`, Math.max(colTop.get(`${x},${z}`) ?? -Infinity, y));
       }
       rebuildPlaced(); // sekali di akhir, jauh lebih cepat daripada per blok
+    },
+    // Ambil balok baru yang belum dikirim ke saudara, lalu kosongkan antrean.
+    takeOutbox(): SavedBlock[] {
+      const out = outbox;
+      outbox = [];
+      return out;
+    },
+    // Kembalikan balok ke antrean saat pengiriman gagal, supaya tidak hilang.
+    requeueOutbox(blocks: SavedBlock[]) {
+      if (blocks.length) outbox = [...blocks, ...outbox].slice(0, 200);
+    },
+    // Pasang balok kiriman saudara. Tidak menambah statistik pemain ini.
+    applyRemoteBlocks(blocks: SavedBlock[]) {
+      let n = 0;
+      for (const b of blocks) {
+        const before = placed.length;
+        const s: Shape = b.s && b.s in shapeMeshes ? b.s : "kubus";
+        addBlock(Math.round(b.x), Math.round(b.y), Math.round(b.z), b.c, s);
+        if (placed.length > before) n++;
+      }
+      return n;
     },
     // Posisi pemain, dikirim ke server saat main bersama.
     getPosition() {
       return { x: player.position.x, y: player.position.y, z: player.position.z };
     },
     // Gambar ulang avatar saudara sekeluarga. Bergerak halus ke posisi terbaru.
-    setFriends(list: { username: string; x: number; y: number; z: number; hero: string }[]) {
+    setFriends(list: { username: string; x: number; y: number; z: number; hero: string; emote?: string }[]) {
       const seen = new Set<string>();
       for (const f of list) {
         seen.add(f.username);
@@ -905,10 +987,25 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
           g.add(body, head, tag);
           g.position.set(f.x, f.y, f.z);
           scene.add(g);
-          e = { g, target: new THREE.Vector3(f.x, f.y, f.z) };
+          e = { g, target: new THREE.Vector3(f.x, f.y, f.z), bubble: null, bubbleUntil: 0 };
           friends.set(f.username, e);
         }
         e.target.set(f.x, f.y, f.z);
+        // emote tampil 4 detik lalu hilang sendiri
+        if (f.emote) {
+          if (!e.bubble) {
+            const sp = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true }));
+            sp.scale.setScalar(0.9);
+            sp.position.y = 2.6;
+            e.g.add(sp);
+            e.bubble = sp;
+          }
+          (e.bubble.material as THREE.SpriteMaterial).map = emoteTexture(f.emote);
+          (e.bubble.material as THREE.SpriteMaterial).needsUpdate = true;
+          e.bubble.visible = true;
+          // properti, bukan getElapsedTime() — metode itu ikut memajukan delta
+          e.bubbleUntil = clock.elapsedTime + 4;
+        }
       }
       // yang sudah tidak online dihapus dari layar
       for (const [name, e] of friends) {

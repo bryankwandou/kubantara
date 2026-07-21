@@ -57,6 +57,20 @@ export function ensureSchema() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`;
       await sql`CREATE INDEX IF NOT EXISTS presence_family ON presence (family_code, updated_at)`;
+      // emote terakhir; hanya lambang dari daftar tetap, bukan teks bebas
+      await sql`ALTER TABLE presence ADD COLUMN IF NOT EXISTS emote TEXT`;
+      await sql`ALTER TABLE presence ADD COLUMN IF NOT EXISTS emote_at TIMESTAMPTZ`;
+      // balok yang dibangun bersama, agar terlihat oleh saudara sekode
+      await sql`CREATE TABLE IF NOT EXISTS family_blocks (
+        id BIGSERIAL PRIMARY KEY,
+        family_code TEXT NOT NULL,
+        by_user BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        x INT NOT NULL, y INT NOT NULL, z INT NOT NULL,
+        c INT NOT NULL,
+        s TEXT NOT NULL DEFAULT 'kubus',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS family_blocks_feed ON family_blocks (family_code, id)`;
     })();
   }
   return ready;
