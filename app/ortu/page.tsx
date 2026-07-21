@@ -15,6 +15,7 @@ interface Anak {
   playMinutes: number;
   todayMinutes: number;
   limitMinutes: number;
+  familyCode: string;
   lastPlayed: string | null;
   stats: Record<string, number>;
 }
@@ -36,6 +37,17 @@ export default function OrtuPage() {
     setSimpan(null);
     if (!res.ok) { setErr("Gagal menyimpan batas waktu"); return; }
     setAnak((prev) => prev?.map((a) => (a.id === childId ? { ...a, limitMinutes: minutes } : a)) ?? prev);
+  }
+
+  async function ubahKode(childId: number, familyCode: string) {
+    const res = await fetch("/api/ortu", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ childId, familyCode }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) { setErr(data?.error ?? "Gagal menyimpan kode keluarga"); return; }
+    setAnak((prev) => prev?.map((a) => (a.id === childId ? { ...a, familyCode: data.familyCode ?? "" } : a)) ?? prev);
   }
 
   useEffect(() => {
@@ -101,6 +113,7 @@ export default function OrtuPage() {
                   <th className="px-4 py-3">Hari ini</th>
                   <th className="px-4 py-3">Total main</th>
                   <th className="px-4 py-3">Batas harian</th>
+                  <th className="px-4 py-3">Kode keluarga</th>
                   <th className="px-4 py-3">Terakhir main</th>
                 </tr>
               </thead>
@@ -131,6 +144,17 @@ export default function OrtuPage() {
                         ))}
                       </select>
                     </td>
+                    <td className="px-4 py-3">
+                      <input
+                        defaultValue={a.familyCode}
+                        placeholder="kosong = mati"
+                        onBlur={(e) => {
+                          if (e.target.value.trim().toUpperCase() !== a.familyCode)
+                            ubahKode(a.id, e.target.value);
+                        }}
+                        className="w-32 rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm uppercase text-slate-100 placeholder:normal-case placeholder:text-slate-500"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-slate-400">
                       {a.lastPlayed ? new Date(a.lastPlayed).toLocaleDateString("id-ID", { day: "numeric", month: "short" }) : "Belum pernah"}
                     </td>
@@ -148,6 +172,15 @@ export default function OrtuPage() {
             bisa lewat paling lama sekitar 20 detik dari batas. Saat batas tercapai, layar
             &ldquo;Waktunya istirahat&rdquo; muncul dan progres tersimpan aman. Penghitung
             kembali nol tiap ganti hari. Pilih &ldquo;Tanpa batas&rdquo; untuk mematikannya.
+          </p>
+          <p className="mt-3 font-bold text-slate-300">Main bersama saudara</p>
+          <p className="mt-1 leading-relaxed">
+            Beri <strong>kode keluarga yang sama</strong> pada anak-anak yang boleh saling
+            melihat saat bermain. Mereka akan muncul sebagai boneka bertanda biru di dunia
+            masing-masing. Kode hanya bisa diatur di halaman ini — anak tidak bisa
+            mengetiknya sendiri, jadi orang asing tidak bisa ikut masuk. Tidak ada fitur
+            obrolan teks sama sekali; yang dikirim hanya posisi dan nama. Kosongkan kolom
+            untuk mematikan fitur ini.
           </p>
         </div>
       </div>

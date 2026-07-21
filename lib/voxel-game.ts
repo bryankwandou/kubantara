@@ -445,6 +445,13 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   let activeNpc: string | null = null;
   let npcCheck = 0;
 
+  // ---------- saudara yang main bersama ----------
+  const HERO_COLORS: Record<string, number> = {
+    penjelajah: 0xe2554d, penyihir: 0x9b5de5, "penjaga-hutan": 0x2f9e44,
+    pelaut: 0x1982c4, "penjaga-fajar": 0xffca3a, "bayangan-baik": 0x2b2d42,
+  };
+  const friends = new Map<string, { g: THREE.Group; target: THREE.Vector3 }>();
+
   // ---------- cuaca ----------
   const rainGeo = new THREE.BufferGeometry();
   {
@@ -697,6 +704,12 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       stepCritter(w.c, THREE.MathUtils.clamp(tx, -HALF + 3, HALF - 3), THREE.MathUtils.clamp(tz, -HALF + 3, HALF - 3), 2, dt, t * 6 + w.dir);
     }
 
+    // ----- saudara sekeluarga: geser halus ke posisi terbaru dari server -----
+    for (const e of friends.values()) {
+      e.g.position.lerp(e.target, Math.min(1, dt * 4));
+      e.g.rotation.y += dt * 0.6; // berputar pelan agar terlihat hidup
+    }
+
     // ----- preview blok -----
     const cell = targetCell();
     ghost.position.set(cell.x, cell.y, cell.z);
@@ -855,6 +868,46 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         colTop.set(key, Math.max(colTop.get(key) ?? -Infinity, Math.round(b.y)));
       }
       rebuildPlaced(); // sekali di akhir, jauh lebih cepat daripada per blok
+    },
+    // Posisi pemain, dikirim ke server saat main bersama.
+    getPosition() {
+      return { x: player.position.x, y: player.position.y, z: player.position.z };
+    },
+    // Gambar ulang avatar saudara sekeluarga. Bergerak halus ke posisi terbaru.
+    setFriends(list: { username: string; x: number; y: number; z: number; hero: string }[]) {
+      const seen = new Set<string>();
+      for (const f of list) {
+        seen.add(f.username);
+        let e = friends.get(f.username);
+        if (!e) {
+          const g = new THREE.Group();
+          const col = HERO_COLORS[f.hero] ?? 0x3b7fd6;
+          const mat = new THREE.MeshLambertMaterial({ color: col });
+          const skin = new THREE.MeshLambertMaterial({ color: 0xf5c396 });
+          const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.35), mat);
+          body.position.y = 0.95; body.castShadow = true;
+          const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), skin);
+          head.position.y = 1.55; head.castShadow = true;
+          // tanda di atas kepala supaya mudah dikenali dari jauh
+          const tag = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.18),
+            new THREE.MeshBasicMaterial({ color: 0x7ee6ff })
+          );
+          tag.position.y = 2.15;
+          g.add(body, head, tag);
+          g.position.set(f.x, f.y, f.z);
+          scene.add(g);
+          e = { g, target: new THREE.Vector3(f.x, f.y, f.z) };
+          friends.set(f.username, e);
+        }
+        e.target.set(f.x, f.y, f.z);
+      }
+      // yang sudah tidak online dihapus dari layar
+      for (const [name, e] of friends) {
+        if (seen.has(name)) continue;
+        scene.remove(e.g);
+        friends.delete(name);
+      }
     },
     // Pulihkan satwa jinak dari simpanan: jinakkan n ekor pertama.
     setTamedCount(n: number) {

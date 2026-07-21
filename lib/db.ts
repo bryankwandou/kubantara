@@ -42,6 +42,21 @@ export function ensureSchema() {
       // penghitung harian yang di-reset saat tanggalnya berganti
       await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS play_today_seconds INT NOT NULL DEFAULT 0`;
       await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS play_date DATE`;
+      // kode keluarga: hanya anak dengan kode sama yang bisa saling melihat.
+      // Diisi orang tua, tidak pernah diketik anak.
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS family_code TEXT`;
+      // kehadiran pemain untuk main bersama (posisi saja, tanpa obrolan)
+      await sql`CREATE TABLE IF NOT EXISTS presence (
+        user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        family_code TEXT NOT NULL,
+        username TEXT NOT NULL,
+        x REAL NOT NULL DEFAULT 0,
+        y REAL NOT NULL DEFAULT 0,
+        z REAL NOT NULL DEFAULT 0,
+        hero TEXT NOT NULL DEFAULT 'penjelajah',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS presence_family ON presence (family_code, updated_at)`;
     })();
   }
   return ready;

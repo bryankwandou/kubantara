@@ -34,8 +34,9 @@ Target: dari MVP menjadi game open-world web kelas AAA yang aman untuk anak, den
 
 ## Fase 5 (Hari 41–50) — Kreasi & Bangunan Lanjutan — SEBAGIAN
 - [x] Cetakan bangunan sekali tekan: rumah, menara, tangga, pagar.
-- [ ] Balok bentuk baru: tangga, setengah balok, kaca, lampu — butuh mesh
-      terpisah per bentuk, bukan satu InstancedMesh kubus seperti sekarang.
+- [x] Balok bentuk baru: kaca (tembus pandang), lampu (menyala saat gelap),
+      setengah balok. Masing-masing punya InstancedMesh sendiri.
+- [ ] Balok tangga (bentuk miring).
 - [ ] Galeri kreasi: simpan beberapa dunia per akun.
 
 ## Fase 6 (Hari 51–60) — Satwa & Peliharaan Lanjutan — SEBAGIAN
@@ -53,19 +54,27 @@ Target: dari MVP menjadi game open-world web kelas AAA yang aman untuk anak, den
 - [ ] Salju turun di biome salju.
 - [ ] Efek suara langkah per jenis permukaan.
 
-## Fase 8 (Hari 71–80) — Multiplayer Keluarga (aman) — BELUM DIKERJAKAN
-Butuh server WebSocket yang hidup terus. Vercel (hosting sekarang) hanya
-menjalankan fungsi tanpa status, jadi ini perlu layanan terpisah dan biaya
-bulanan. Keputusan ini menunggu persetujuan sebelum dikerjakan.
-- [ ] Main bersama saudara lewat kode undangan keluarga.
-- [ ] Tanpa obrolan teks bebas — hanya emote dan stiker aman.
-- [ ] Sinkronisasi posisi dan balok via WebSocket.
+## Fase 8 (Hari 71–80) — Multiplayer Keluarga (aman) — SEBAGIAN
+Dikerjakan **tanpa server WebSocket berbayar**: posisi disimpan di Neon Postgres
+yang sudah ada, klien polling tiap 2 detik. Saudara terlihat bergerak dengan
+jeda ~2 detik — cukup untuk main bangun bareng, tidak cukup untuk kejar-kejaran.
+- [x] Kode keluarga diatur orang tua di /ortu; anak tidak bisa mengetiknya sendiri.
+- [x] Avatar saudara muncul di dunia, bergerak halus (interpolasi).
+- [x] Tanpa obrolan teks sama sekali — hanya posisi dan nama yang dikirim.
+- [x] Polling mati sendiri kalau akun tidak punya kode, supaya hemat kuota database.
+- [ ] Sinkronisasi balok antar-pemain (baru posisi pemain yang tersinkron).
+- [ ] Emote dan stiker aman.
+- [ ] **Risiko biaya:** 12 anak online serentak ≈ 6 permintaan/detik ke database.
+      Perlu dipantau di dasbor Neon; kalau kuota gratis tekor, naikkan jeda
+      polling ke 4-5 detik.
 
 ## Fase 9 (Hari 81–90) — Panel Orang Tua — SEBAGIAN
 - [x] Dasbor /ortu: level, bintang, pencapaian, misi, dan waktu main tiap anak.
 - [x] Pencatatan waktu main (dibatasi 600 detik per simpanan agar tidak dipalsukan).
 - [x] Peran akun 'anak'/'ortu'; panel menolak akun anak dengan kode 403.
-- [ ] Batas waktu main harian yang benar-benar menghentikan permainan.
+- [x] Batas waktu main harian yang benar-benar menghentikan permainan
+      (dicek tiap simpanan; layar "Waktunya istirahat" muncul, progres aman).
+- [x] Pengaturan batas per anak: tanpa batas / 30 / 45 / 60 / 90 / 120 menit.
 - [ ] Login Google diaktifkan.
 
 ## Fase 10 (Hari 91–100) — Poles & Rilis Besar
