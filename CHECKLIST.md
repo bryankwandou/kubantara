@@ -1,5 +1,30 @@
 # Kubantara — Checklist Induk Pengembangan
 
+## Sisa pekerjaan, urut dampak ke anak (per 2026-07-21)
+
+**Menghalangi anak main hari ini**
+1. Akun 12 anak belum dibuat — jalankan `node scripts/buat-akun-anak.mjs`.
+2. Belum pernah dimainkan manusia di HP sungguhan.
+
+**Terasa cepat kalau kurang**
+3. Peralatan (8 item) masih hiasan — belum mengubah gameplay sama sekali.
+4. Tidak ada pengaturan volume; musik hanya bisa nyala/mati.
+5. Tidak ada mode layar penuh atau kunci orientasi lanskap.
+
+**Membuat dunia terasa lebih hidup**
+6. Gua & terowongan (butuh tabrakan volumetrik — perombakan mesin fisika).
+7. Danau besar, hutan lebat, teleport antar-titik.
+8. Musik berubah mengikuti waktu & biome; suara langkah per permukaan.
+9. Kandang, memberi makan, kostum peliharaan; tunggangan terbang/berenang.
+
+**Kenyamanan jangka panjang**
+10. Login Google (butuh Client ID & Secret dari Google Cloud milik user).
+11. Reset kata sandi lewat email; hapus akun sendiri.
+12. Rate limiting di endpoint daftar/masuk.
+13. Beberapa slot dunia per akun; ekspor/impor dunia.
+14. Ringkasan mingguan & notifikasi untuk orang tua.
+
+
 Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diuji di produksi.
 (Catatan jujur: daftar 50.000 butir tidak mungkin bermakna — yang ada di sini adalah checklist induk yang benar-benar bisa dieksekusi dan terus tumbuh per fase.)
 
@@ -78,9 +103,14 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 - [x] Keyboard WASD + spasi + Q/E untuk laptop
 - [x] Landing page dengan CTA main/daftar/masuk
 - [x] Halaman daftar/masuk dengan pesan galat berbahasa manusia
-- [ ] Tutorial interaktif untuk pemain baru
+- [x] Sambutan 4 langkah untuk pemain baru (sekali per perangkat, bisa dilewati)
+- [x] HUD ringkas di layar HP: chip jadi ikon, palet turun ke baris kedua
+- [x] Cetakan bangunan & bentuk balok masuk laci — **dulu menimpa joystick
+      di HP portrait sehingga anak tidak bisa berjalan sama sekali**
+- [x] Panel misi/pahlawan dibatasi tingginya + bisa digulir
 - [ ] Pengaturan: volume, sensitivitas kamera
 - [ ] Mode layar penuh
+- [ ] Kunci orientasi lanskap di HP
 
 ## F. Kualitas & Operasional
 - [x] Build produksi lolos tanpa error TypeScript
@@ -92,10 +122,13 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 - [x] Batas waktu main harian yang benar-benar menghentikan permainan
 - [x] Mutu grafis turun otomatis di perangkat lemah (bayangan, pixel ratio,
       jarak pandang, jumlah partikel hujan)
-- [ ] **Uji manual di HP Android sungguhan — belum dilakukan sama sekali.**
-      Seluruh fitur di bawah ini baru lolos build, belum pernah dimainkan:
-      NPC, cuaca, musik, perk, cetakan bangunan, jinakkan satwa, bentuk balok,
-      batas waktu, dan main bersama.
+- [x] **Uji alur nyata di produksi lewat API** (2026-07-21): daftar → sesi →
+      simpan → baca ulang, bentuk balok bertahan, misi/pencapaian dihitung
+      server, main bersama (posisi + balok + emote) tersinkron antar dua akun,
+      panel ortu menolak akun anak (403). Akun uji sudah dihapus.
+- [ ] **Uji main sungguhan di HP — belum pernah.** Yang sudah terbukti hanya
+      *datanya benar*, bukan *tampilannya benar*. Belum ada satu frame pun yang
+      pernah dilihat manusia: salju, blueprint, tata letak HUD, gerak avatar.
 - [ ] Pengukuran FPS di perangkat kelas bawah
 - [ ] Pantau kuota Neon saat 12 anak online serentak (polling 2 detik)
 
