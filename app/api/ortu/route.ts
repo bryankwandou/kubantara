@@ -14,7 +14,7 @@ export async function GET() {
     return NextResponse.json({ error: "Halaman ini hanya untuk orang tua" }, { status: 403 });
 
   const rows = await sql`
-    SELECT u.id, u.username, u.created_at, u.daily_limit_minutes,
+    SELECT u.id, u.username, u.created_at, u.daily_limit_minutes, u.family_code,
            p.level, p.xp, p.stars, p.stats, p.achievements, p.quests,
            p.play_seconds, p.play_today_seconds, p.play_date, p.updated_at
     FROM users u
@@ -39,6 +39,7 @@ export async function GET() {
         ? Math.round(Number(r.play_today_seconds ?? 0) / 60)
         : 0,
       limitMinutes: Number(r.daily_limit_minutes ?? 0),
+      familyCode: (r.family_code as string | null) ?? "",
       lastPlayed: r.updated_at,
       stats: (r.stats as Record<string, number>) ?? {},
     })),
@@ -57,11 +58,24 @@ export async function PUT(req: Request) {
 
   const body = await req.json().catch(() => null);
   const childId = Math.floor(Number(body?.childId));
-  const minutes = Math.min(600, Math.max(0, Math.floor(Number(body?.minutes) || 0)));
   if (!Number.isFinite(childId) || childId <= 0)
     return NextResponse.json({ error: "Anak tidak dikenali" }, { status: 400 });
 
   // batasi hanya ke akun anak, supaya panel tak bisa mengubah akun ortu lain
+  if (body?.familyCode !== undefined) {
+    // kosong = matikan main bersama untuk anak ini
+    const raw = String(body.familyCode ?? "").trim().toUpperCase().slice(0, 24);
+    const code = raw === "" ? null : raw;
+    if (code && !/^[A-Z0-9-]{4,24}$/.test(code))
+      return NextResponse.json({ error: "Kode hanya boleh huruf, angka, dan tanda hubung (4-24 karakter)" }, { status: 400 });
+    const done = await sql`
+      UPDATE users SET family_code = ${code}
+      WHERE id = ${childId} AND role = 'anak' RETURNING id`;
+    if (!done.length) return NextResponse.json({ error: "Anak tidak ditemukan" }, { status: 404 });
+    return NextResponse.json({ ok: true, familyCode: code });
+  }
+
+  const minutes = Math.min(600, Math.max(0, Math.floor(Number(body?.minutes) || 0)));
   const done = await sql`
     UPDATE users SET daily_limit_minutes = ${minutes}
     WHERE id = ${childId} AND role = 'anak' RETURNING id`;

@@ -61,6 +61,7 @@ export default function PlayPage() {
   const [statsView, setStatsView] = useState<GameStats | null>(null);
   const [timeUp, setTimeUp] = useState(false);
   const [shape, setShape] = useState<Shape>("kubus");
+  const [teman, setTeman] = useState(0);
   const questsDoneRef = useRef<Set<string>>(new Set());
   const lastSaveRef = useRef<number>(Date.now());
   const profileRef = useRef<Profile | null>(null);
@@ -172,10 +173,32 @@ export default function PlayPage() {
     })();
 
     const iv = setInterval(save, 20000);
+
+    // main bersama: kirim posisi & terima posisi saudara tiap 2 detik.
+    // Server mematikan sendiri kalau akun belum diberi kode keluarga.
+    let bersamaAktif = true;
+    const ivBersama = setInterval(async () => {
+      if (!bersamaAktif || !profileRef.current) return;
+      const pos = game.getPosition();
+      try {
+        const res = await fetch("/api/bersama", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...pos, hero: profileRef.current.activeHero }),
+        });
+        const data = await res.json();
+        if (!data.enabled) { bersamaAktif = false; return; } // hemat kuota database
+        game.setFriends(data.teman ?? []);
+        setTeman((data.teman ?? []).length);
+      } catch {
+        // koneksi putus; coba lagi siklus berikutnya
+      }
+    }, 2000);
     const onHide = () => save();
     window.addEventListener("pagehide", onHide);
     return () => {
       clearInterval(iv);
+      clearInterval(ivBersama);
       window.removeEventListener("pagehide", onHide);
       music.stop();
       game.dispose();
@@ -266,6 +289,11 @@ export default function PlayPage() {
         >
           📜 Misi {questsDoneRef.current.size}/{QUESTS.length}
         </button>
+        {teman > 0 && (
+          <div className="rounded-xl bg-cyan-500/90 px-3 py-2 text-sm font-bold text-white shadow">
+            👨‍👩‍👧 {teman} saudara ikut main
+          </div>
+        )}
         <button
           onClick={toggleMusic}
           className="pointer-events-auto rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-violet-700 shadow"
