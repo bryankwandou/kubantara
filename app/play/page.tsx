@@ -158,6 +158,7 @@ export default function PlayPage() {
       unlockedRef.current = new Set(prof.achievements);
       questsDoneRef.current = new Set(Array.isArray(p?.quests) ? p.quests : []);
       if (Array.isArray(p?.blocks) && p.blocks.length) game.loadBlocks(p.blocks);
+      if (p?.stats?.tamed) game.setTamedCount(Number(p.stats.tamed));
       const hero = HEROES.find((h) => h.id === prof.activeHero);
       if (hero) game.setHero(hero.shirt, hero.pants);
       // keahlian terbuka bertambah kuat mengikuti level

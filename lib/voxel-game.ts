@@ -819,6 +819,15 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         addBlock(Math.round(b.x), Math.round(b.y), Math.round(b.z), b.c);
       }
     },
+    // Pulihkan satwa jinak dari simpanan: jinakkan n ekor pertama.
+    setTamedCount(n: number) {
+      const want = Math.min(Math.max(0, Math.floor(n)), wildlife.length);
+      for (let i = 0; i < want; i++) {
+        wildlife[i].tamed = true;
+        wildlife[i].heart.visible = true;
+      }
+      stats.tamed = Math.max(stats.tamed, want);
+    },
     // Jinakkan satwa liar terdekat. Ramah: cukup mendekat lalu menekan tombol.
     tameNearest() {
       let best: (typeof wildlife)[number] | null = null;

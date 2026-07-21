@@ -41,7 +41,7 @@ Target: dari MVP menjadi game open-world web kelas AAA yang aman untuk anak, den
 ## Fase 6 (Hari 51–60) — Satwa & Peliharaan Lanjutan — SEBAGIAN
 - [x] Jinakkan satwa liar: dekati lalu tekan "Jinakkan"; satwa jinak bertanda
       hati dan mengikuti pemain. Ada 2 pencapaian + 1 misi cerita.
-- [ ] Satwa jinak belum tersimpan ke database (hilang saat muat ulang).
+- [x] Satwa jinak bertahan setelah muat ulang (dipulihkan dari statistik `tamed`).
 - [ ] Kandang, memberi makan, kostum peliharaan.
 - [ ] Tunggangan baru: terbang rendah, berenang.
 
