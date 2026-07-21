@@ -9,6 +9,11 @@ const HALF = WORLD / 2;
 const WATER_LEVEL = 2.5;
 const MAX_PLACED = 4000;
 const DAY_LEN = 120; // detik satu putaran siang-malam penuh
+// Mulai permainan di tengah siang, bukan tengah malam. Kesan pertama anak
+// harus dunia yang terang, dan mereka tidak boleh dapat pencapaian "bertahan
+// sampai malam" secara gratis di detik nol.
+// 0,26 = tepat lewat fajar, memberi rentang terang terpanjang sebelum malam.
+const DAY_START = 0.26;
 
 // ---------- noise sederhana (value noise) ----------
 function hash(x: number, z: number) {
@@ -608,6 +613,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
   let vy = 0, yaw = 0, camYaw = 0, walk = 0, distAcc = 0;
   const clock = new THREE.Clock();
+  let gameTime = 0;
 
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -638,10 +644,14 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   function frame() {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(clock.getDelta(), 0.05);
-    const t = clock.elapsedTime;
+    // Waktu game ditumpuk dari dt yang sudah dibatasi, bukan dari jam dinding.
+    // Kalau tidak, di laptop lambat anak bergerak pelan tapi malam tetap
+    // datang secepat biasanya — dunia terasa tidak adil.
+    gameTime += dt;
+    const t = gameTime;
 
     // ----- siklus siang-malam -----
-    const phase = (t % DAY_LEN) / DAY_LEN; // 0..1
+    const phase = ((t / DAY_LEN) + DAY_START) % 1; // 0..1, mulai dari siang
     const ang = phase * Math.PI * 2 - Math.PI / 2;
     const sunY = Math.sin(ang), sunX = Math.cos(ang);
     sun.position.set(sunX * 60, sunY * 80, 30);
@@ -666,7 +676,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     moonBall.visible = sunY < 0.1;
     const label = sunY < 0 ? "Malam" : phase < 0.3 ? "Pagi" : phase < 0.6 ? "Siang" : "Senja";
     if (label !== lastLabel) {
-      if (label === "Malam") bump("nights");
+      // label pertama hanya menetapkan keadaan awal — bukan malam yang dilalui
+      if (label === "Malam" && lastLabel !== "") bump("nights");
       lastLabel = label; hooks.onTime(label);
     }
 
@@ -1003,8 +1014,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
           (e.bubble.material as THREE.SpriteMaterial).map = emoteTexture(f.emote);
           (e.bubble.material as THREE.SpriteMaterial).needsUpdate = true;
           e.bubble.visible = true;
-          // properti, bukan getElapsedTime() — metode itu ikut memajukan delta
-          e.bubbleUntil = clock.elapsedTime + 4;
+          // pakai waktu game yang sama dengan loop, bukan jam dinding
+          e.bubbleUntil = gameTime + 4;
         }
       }
       // yang sudah tidak online dihapus dari layar

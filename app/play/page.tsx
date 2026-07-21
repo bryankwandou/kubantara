@@ -377,9 +377,11 @@ export default function PlayPage() {
           <>
             <button
               onClick={() => setShowHeroes((v) => !v)}
-              className="pointer-events-auto rounded-xl bg-violet-500/90 px-2.5 py-1.5 text-xs font-bold text-white shadow sm:px-3 sm:py-2 sm:text-sm"
+              className="pointer-events-auto flex max-w-[9rem] items-center gap-1 overflow-hidden rounded-xl bg-violet-500/90 px-2.5 py-1.5 text-xs font-bold text-white shadow sm:px-3 sm:py-2 sm:text-sm"
             >
-              <span className="hidden sm:inline">{profile.username} · </span>Lv {level}
+              {/* nama dipotong supaya baris chip tidak melebar menabrak palet warna */}
+              <span className="hidden truncate xl:inline">{profile.username}</span>
+              <span className="shrink-0">Lv {level}</span>
             </button>
             <Link
               href="/profil"
@@ -489,7 +491,7 @@ export default function PlayPage() {
 
       {/* Palet warna balok — turun ke bawah bar atas di layar sempit
           supaya tidak bertabrakan dengan chip status. */}
-      <div className="absolute left-1/2 top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5 lg:top-3">
+      <div className="absolute left-1/2 top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5">
         {PALETTE.map((p, i) => (
           <button
             key={p.name}
