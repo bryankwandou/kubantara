@@ -88,24 +88,32 @@ export interface Perks {
 export interface SavedBlock { x: number; y: number; z: number; c: number; s?: Shape }
 
 export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Perangkat kelas bawah: inti CPU sedikit atau layar kecil. Turunkan beban
+  // grafis daripada memaksa dan membuat permainan patah-patah.
+  const lowEnd =
+    (navigator.hardwareConcurrency ?? 4) <= 4 ||
+    Math.min(window.screen.width, window.screen.height) <= 480;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowEnd ? 1.25 : 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = lowEnd ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   const skyDay = new THREE.Color(0x8ecfff);
   const skyNight = new THREE.Color(0x0a1440);
   const skyDusk = new THREE.Color(0xf3934f);
   scene.background = skyDay.clone();
-  scene.fog = new THREE.Fog(skyDay.getHex(), 70, 165);
+  // jarak pandang lebih pendek di perangkat lemah: kabut menutup batasnya
+  // sehingga tidak terlihat seperti dunia yang terpotong
+  scene.fog = new THREE.Fog(skyDay.getHex(), lowEnd ? 45 : 70, lowEnd ? 105 : 165);
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 500);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, lowEnd ? 220 : 500);
 
   // ---------- cahaya ----------
   const sun = new THREE.DirectionalLight(0xfff4d6, 2.2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(lowEnd ? 1024 : 2048, lowEnd ? 1024 : 2048);
   const scam = sun.shadow.camera as THREE.OrthographicCamera;
   scam.left = -80; scam.right = 80; scam.top = 80; scam.bottom = -80;
   const ambient = new THREE.AmbientLight(0xbfd9ff, 0.9);
@@ -456,7 +464,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const rainGeo = new THREE.BufferGeometry();
   {
     const pts: number[] = [];
-    for (let i = 0; i < 500; i++)
+    for (let i = 0; i < (lowEnd ? 200 : 500); i++)
       pts.push((Math.random() - 0.5) * 60, Math.random() * 30, (Math.random() - 0.5) * 60);
     rainGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
   }

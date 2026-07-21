@@ -40,9 +40,12 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 - [x] 8 peralatan terbuka per level
 - [x] Toast pencapaian real-time di HUD
 - [x] Panel pilih pahlawan (terkunci tampil dengan syarat levelnya)
-- [ ] Efek gameplay nyata untuk tiap keahlian
+- [x] 18 pencapaian (bertambah 2 dari menjinakkan satwa)
+- [x] 11 misi cerita dengan hadiah XP, dihitung ulang di server
+- [x] Efek gameplay nyata untuk kedelapan keahlian (sistem perk)
+- [x] Halaman /profil lengkap dengan galeri pencapaian & statistik
 - [ ] Efek gameplay nyata untuk tiap peralatan
-- [ ] Halaman profil lengkap dengan galeri pencapaian
+- [ ] Pohon keahlian yang bisa dipilih sendiri
 
 ## D. Dunia & Gameplay
 - [x] Dunia voxel 112x112 dengan noise dua oktaf
@@ -54,13 +57,19 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 - [x] Siklus siang-malam 120 detik + bintang langit
 - [x] 24 bintang koleksi + layar kemenangan
 - [x] Suara sintetis Web Audio (tanpa berkas audio)
-- [ ] Cerita utama + NPC + misi
-- [ ] Biome gurun/salju/hutan lebat
-- [ ] Gua bawah tanah
-- [ ] Cuaca (hujan, salju, pelangi)
-- [ ] Musik latar prosedural
-- [ ] Balok bentuk baru (tangga, kaca, lampu)
-- [ ] Multiplayer keluarga via kode undangan
+- [x] Cerita utama + 6 NPC + 11 misi
+- [x] Biome gurun & salju (ketinggian + peta suhu)
+- [x] Desa: rumah kayu beratap daun di dekat tiap penduduk
+- [x] Cuaca: cerah → hujan → pelangi, dengan peredupan matahari
+- [x] Musik latar prosedural pentatonik (bisa dimatikan)
+- [x] Balok bentuk baru: kaca, lampu menyala, setengah balok
+- [x] Cetakan bangunan sekali tekan: rumah, menara, tangga, pagar
+- [x] Jinakkan satwa liar jadi peliharaan pengikut (bertahan setelah muat ulang)
+- [x] Multiplayer keluarga via kode yang diatur orang tua
+- [ ] Gua bawah tanah (butuh tabrakan volumetrik, bukan peta ketinggian)
+- [ ] Salju turun di biome salju
+- [ ] Sinkronisasi balok antar-pemain
+- [ ] Rumah desa masih tembus badan (dekoratif, disengaja agar anak tak tersangkut)
 
 ## E. Antarmuka
 - [x] HUD: bintang, waktu, profil + level, palet warna, sihir, aksi
@@ -76,7 +85,24 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 - [x] Build produksi lolos tanpa error TypeScript
 - [x] Deploy Vercel produksi + verifikasi HTTP 200
 - [x] Repo publik GitHub tanpa satu pun rahasia
-- [ ] Uji manual di HP Android sungguhan (perlu tangan manusia)
+- [x] Panel orang tua /ortu untuk 12 akun anak, dijaga peran (403 untuk anak)
+- [x] Batas waktu main harian yang benar-benar menghentikan permainan
+- [x] Mutu grafis turun otomatis di perangkat lemah (bayangan, pixel ratio,
+      jarak pandang, jumlah partikel hujan)
+- [ ] **Uji manual di HP Android sungguhan — belum dilakukan sama sekali.**
+      Seluruh fitur di bawah ini baru lolos build, belum pernah dimainkan:
+      NPC, cuaca, musik, perk, cetakan bangunan, jinakkan satwa, bentuk balok,
+      batas waktu, dan main bersama.
 - [ ] Pengukuran FPS di perangkat kelas bawah
-- [ ] Panel orang tua untuk 12 akun anak
-- [ ] Batas waktu main harian
+- [ ] Pantau kuota Neon saat 12 anak online serentak (polling 2 detik)
+
+## G. Panel Orang Tua & Main Bersama
+- [x] Kolom peran akun: 'anak' (bawaan) / 'ortu'
+- [x] Tabel progres 12 anak: level, bintang, pencapaian, misi, waktu main
+- [x] Pencatatan waktu main total & harian (dibatasi 600 detik per simpanan)
+- [x] Pengatur batas harian per anak (tanpa batas / 30 / 45 / 60 / 90 / 120 menit)
+- [x] Kode keluarga hanya bisa diatur orang tua — anak tidak bisa mengetiknya
+- [x] Main bersama tanpa obrolan teks; hanya posisi & nama yang dikirim
+- [x] Kehadiran kedaluwarsa 15 detik supaya yang offline hilang sendiri
+- [ ] Ringkasan mingguan per anak
+- [ ] Notifikasi ke orang tua saat batas tercapai
