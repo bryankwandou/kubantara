@@ -30,7 +30,7 @@ function terrainHeight(x: number, z: number) {
   );
 }
 
-export type Biome = "grass" | "dirt" | "sand" | "stone" | "wood" | "leaf";
+export type Biome = "grass" | "dirt" | "sand" | "stone" | "wood" | "leaf" | "snow";
 export const PALETTE = [
   { name: "Rumput", hex: 0x5fbf4a },
   { name: "Tanah", hex: 0x8a5a33 },
@@ -49,6 +49,8 @@ export interface GameHooks {
   onTime: (label: "Pagi" | "Siang" | "Senja" | "Malam") => void;
   onRide: (riding: boolean) => void;
   onStat?: (stats: GameStats) => void;
+  onNpc?: (npc: { name: string; line: string } | null) => void;
+  onWeather?: (w: "Cerah" | "Hujan" | "Pelangi") => void;
 }
 
 export interface GameStats {
@@ -59,6 +61,15 @@ export interface GameStats {
   jumps: number;
   distance: number;
   nights: number;
+  npcMet: number;
+}
+
+export interface Perks {
+  speedMul: number;   // pengali kecepatan lari
+  jumpMul: number;    // pengali tinggi lompat
+  reach: number;      // jarak pasang balok
+  spellScale: number; // besaran efek sihir
+  camExtra: number;   // tambahan jarak kamera
 }
 
 export interface SavedBlock { x: number; y: number; z: number; c: number }
@@ -126,6 +137,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     stone: { color: 0x9aa2ab, cells: [] },
     wood: { color: 0x7a4f2a, cells: [] },
     leaf: { color: 0x3e9e3e, cells: [] },
+    snow: { color: 0xf2f6fb, cells: [] },
   };
   const m = new THREE.Matrix4();
   const put = (l: Layer, x: number, y: number, z: number) =>
@@ -136,7 +148,14 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     for (let z = -HALF; z < HALF; z++) {
       const h = terrainHeight(x, z);
       heights[x + HALF][z + HALF] = h;
-      const top = h <= WATER_LEVEL ? layers.sand : h > 10 ? layers.stone : layers.grass;
+      // suhu menentukan biome: dingin di utara (salju), panas di tenggara (gurun)
+      const temp = smooth(x / 44 + 300, z / 44 + 300);
+      const top =
+        h <= WATER_LEVEL ? layers.sand
+        : h > 11 ? layers.snow
+        : h > 9 ? layers.stone
+        : temp > 0.74 ? layers.sand
+        : layers.grass;
       put(top, x, h, z);
       put(layers.dirt, x, h - 1, z);
       if (top === layers.grass && hash(x * 3.7, z * 3.7) > 0.986) {
@@ -177,8 +196,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const placed: { x: number; y: number; z: number; c: number }[] = [];
   const stats: GameStats = {
     blocksPlaced: 0, blocksRemoved: 0, spellsCast: 0,
-    rides: 0, jumps: 0, distance: 0, nights: 0,
+    rides: 0, jumps: 0, distance: 0, nights: 0, npcMet: 0,
   };
+  const perks: Perks = { speedMul: 1, jumpMul: 1, reach: 1.6, spellScale: 1, camExtra: 0 };
   const bump = (k: keyof GameStats, n = 1) => {
     stats[k] += n;
     hooks.onStat?.(stats);
@@ -258,8 +278,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
   function targetCell() {
     const yaw = player.rotation.y;
-    const tx = Math.round(player.position.x + Math.sin(yaw) * 1.6);
-    const tz = Math.round(player.position.z + Math.cos(yaw) * 1.6);
+    const tx = Math.round(player.position.x + Math.sin(yaw) * perks.reach);
+    const tz = Math.round(player.position.z + Math.cos(yaw) * perks.reach);
     const ty = Math.round(groundAt(tx, tz) + 0.5);
     return { x: tx, y: ty, z: tz };
   }
@@ -312,6 +332,63 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     wildlife.push({ c, dir: hash(i, 3) * Math.PI * 2, timer: 0 });
   }
 
+  // ---------- penduduk pulau (NPC cerita) ----------
+  const NPC_DATA = [
+    { name: "Kakek Bimasakti", line: "Dahulu langit kami penuh cahaya. Lalu satu per satu bintang jatuh dan padam. Maukah kamu mengumpulkannya kembali?", color: 0x8d99ae, x: 4, z: -6 },
+    { name: "Bu Renjana", line: "Setiap balok yang kamu pasang membuat pulau ini hidup lagi. Bangunlah sesukamu, jangan takut salah.", color: 0xff8fd0, x: -14, z: 10 },
+    { name: "Pak Cakrawala", line: "Sihir pelangi tersimpan di tanganmu. Rapalkan di tepi air dan lihat apa yang terjadi.", color: 0x1982c4, x: 18, z: 14 },
+    { name: "Adik Kirana", line: "Aku pernah melihat bintang jatuh di balik bukit salju sana. Hati-hati, di sana dingin sekali!", color: 0xffca3a, x: -24, z: -20 },
+    { name: "Bang Samudra", line: "Tunggangan itu sahabat, bukan alat. Ajak dia berlari dan dia akan membawamu lebih jauh dari siapa pun.", color: 0x2f9e44, x: 30, z: -12 },
+    { name: "Nini Wengi", line: "Jangan takut pada malam. Justru saat gelap, bintang-bintang yang kamu selamatkan bersinar paling terang.", color: 0x9b5de5, x: -8, z: 28 },
+  ];
+  const npcMarkerGeo = new THREE.OctahedronGeometry(0.22);
+  const npcs = NPC_DATA.map((d) => {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshLambertMaterial({ color: d.color });
+    const skin = new THREE.MeshLambertMaterial({ color: 0xf5c396 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.7, 0.32), mat);
+    body.position.y = 0.9; body.castShadow = true;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), skin);
+    head.position.y = 1.5; head.castShadow = true;
+    const marker = new THREE.Mesh(npcMarkerGeo, new THREE.MeshBasicMaterial({ color: 0xffd23e }));
+    marker.position.y = 2.2;
+    g.add(body, head, marker);
+    g.position.set(d.x, groundAt(d.x, d.z), d.z);
+    scene.add(g);
+    return { ...d, g, marker, met: false };
+  });
+  let activeNpc: string | null = null;
+  let npcCheck = 0;
+
+  // ---------- cuaca ----------
+  const rainGeo = new THREE.BufferGeometry();
+  {
+    const pts: number[] = [];
+    for (let i = 0; i < 500; i++)
+      pts.push((Math.random() - 0.5) * 60, Math.random() * 30, (Math.random() - 0.5) * 60);
+    rainGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  }
+  const rain = new THREE.Points(
+    rainGeo,
+    new THREE.PointsMaterial({ color: 0x9db8d9, size: 0.35, transparent: true, opacity: 0.7 })
+  );
+  rain.visible = false;
+  scene.add(rain);
+  const rainbowGroup = new THREE.Group();
+  const rainbowCols = [0xff595e, 0xff924c, 0xffca3a, 0x8ac926, 0x1982c4, 0x6a4c93];
+  rainbowCols.forEach((c, i) => {
+    const torus = new THREE.Mesh(
+      new THREE.TorusGeometry(30 + i * 1.4, 0.6, 8, 40, Math.PI),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.55 })
+    );
+    rainbowGroup.add(torus);
+  });
+  rainbowGroup.visible = false;
+  scene.add(rainbowGroup);
+  let weather: "Cerah" | "Hujan" | "Pelangi" = "Cerah";
+  let weatherTimer = 25 + Math.random() * 30;
+  let weatherDim = 1; // peredup cahaya saat hujan
+
   // ---------- bintang ----------
   const starGeo = new THREE.OctahedronGeometry(0.45);
   const starMat = new THREE.MeshLambertMaterial({ color: 0xffd23e, emissive: 0x8a6000 });
@@ -356,18 +433,20 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     bump("spellsCast");
     const yaw = player.rotation.y;
     const p = player.position;
+    const sc = perks.spellScale;
     if (spell === "kembang-api") {
-      burst(new THREE.Vector3(p.x, p.y + 4, p.z), rainbow[Math.floor(Math.random() * 6)], 40);
+      burst(new THREE.Vector3(p.x, p.y + 4, p.z), rainbow[Math.floor(Math.random() * 6)], Math.round(40 * sc));
     } else if (spell === "bunga") {
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2;
-        const x = Math.round(p.x + Math.cos(a) * 2);
-        const z = Math.round(p.z + Math.sin(a) * 2);
+      const n = Math.round(10 * sc);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const x = Math.round(p.x + Math.cos(a) * 2 * sc);
+        const z = Math.round(p.z + Math.sin(a) * 2 * sc);
         addBlock(x, Math.round(groundAt(x, z) + 0.5), z, rainbow[i % 6]);
       }
       burst(p.clone().setY(p.y + 1), 0xff8fd0, 20);
     } else if (spell === "jembatan") {
-      for (let i = 1; i <= 8; i++) {
+      for (let i = 1; i <= Math.round(8 * sc); i++) {
         const x = Math.round(p.x + Math.sin(yaw) * i);
         const z = Math.round(p.z + Math.cos(yaw) * i);
         addBlock(x, Math.round(WATER_LEVEL + 1), z, rainbow[i % 6]);
@@ -437,8 +516,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     moon.position.set(-sunX * 60, -sunY * 80, 30);
     moonBall.position.copy(player.position).add(new THREE.Vector3(-sunX * 120, -sunY * 140, 60));
     const daylight = THREE.MathUtils.clamp(sunY * 1.4 + 0.35, 0, 1);
-    sun.intensity = daylight * 2.2;
-    ambient.intensity = 0.3 + daylight * 0.7;
+    sun.intensity = daylight * 2.2 * weatherDim;
+    ambient.intensity = (0.3 + daylight * 0.7) * (0.6 + weatherDim * 0.4);
     moon.intensity = (1 - daylight) * 0.5;
     const sky = skyNight.clone();
     if (daylight > 0.5) sky.lerpColors(skyDusk, skyDay, (daylight - 0.5) * 2);
@@ -461,7 +540,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     const len = Math.hypot(ix, iz);
     if (len > 1) { ix /= len; iz /= len; }
     const moving = len > 0.15;
-    const speed = riding ? 11 : 6;
+    const speed = (riding ? 11 : 6) * perks.speedMul;
 
     if (moving) {
       const a = Math.atan2(ix, iz) + camYaw;
@@ -487,7 +566,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     const g = groundAt(player.position.x, player.position.z);
     vy -= 22 * dt;
     if ((keys.Space || touch.jump) && player.position.y <= g + 0.02) {
-      vy = riding ? 11 : 9; sfx.jump(); touch.jump = false; bump("jumps");
+      vy = (riding ? 11 : 9) * perks.jumpMul; sfx.jump(); touch.jump = false; bump("jumps");
     }
     player.position.y += vy * dt;
     if (player.position.y < g) { player.position.y = g; vy = 0; }
@@ -528,7 +607,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     // ----- kamera -----
     if (keys.KeyQ) camYaw += dt * 2;
     if (keys.KeyE) camYaw -= dt * 2;
-    const camDist = riding ? 12 : 9;
+    const camDist = (riding ? 12 : 9) + perks.camExtra;
     const cx = player.position.x - Math.sin(camYaw) * camDist;
     const cz = player.position.z - Math.cos(camYaw) * camDist;
     camera.position.lerp(new THREE.Vector3(cx, player.position.y + (riding ? 8 : 6), cz), 0.08);
@@ -561,6 +640,50 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         (p.mesh.material as THREE.Material).dispose();
         particles.splice(i, 1);
       }
+    }
+
+    // ----- NPC: penanda berputar & deteksi jarak -----
+    npcCheck -= dt;
+    for (const n of npcs) {
+      n.marker.rotation.y = t * 2;
+      n.marker.position.y = 2.2 + Math.sin(t * 3) * 0.12;
+    }
+    if (npcCheck <= 0) {
+      npcCheck = 0.25;
+      let nearest: (typeof npcs)[number] | null = null;
+      for (const n of npcs)
+        if (n.g.position.distanceTo(player.position) < 3) { nearest = n; break; }
+      const name = nearest?.name ?? null;
+      if (name !== activeNpc) {
+        activeNpc = name;
+        hooks.onNpc?.(nearest ? { name: nearest.name, line: nearest.line } : null);
+        if (nearest && !nearest.met) { nearest.met = true; bump("npcMet"); }
+      }
+    }
+
+    // ----- cuaca -----
+    weatherTimer -= dt;
+    if (weatherTimer <= 0) {
+      if (weather === "Cerah") { weather = "Hujan"; weatherTimer = 14 + Math.random() * 10; }
+      else if (weather === "Hujan") { weather = "Pelangi"; weatherTimer = 18; }
+      else { weather = "Cerah"; weatherTimer = 40 + Math.random() * 50; }
+      rain.visible = weather === "Hujan";
+      rainbowGroup.visible = weather === "Pelangi";
+      if (weather === "Pelangi") {
+        rainbowGroup.position.set(player.position.x, WATER_LEVEL, player.position.z - 55);
+      }
+      hooks.onWeather?.(weather);
+    }
+    weatherDim += ((weather === "Hujan" ? 0.45 : 1) - weatherDim) * Math.min(1, dt * 2);
+    if (rain.visible) {
+      rain.position.set(player.position.x, player.position.y, player.position.z);
+      const pos = rainGeo.getAttribute("position") as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        let y = pos.getY(i) - dt * 24;
+        if (y < 0) y = 30;
+        pos.setY(i, y);
+      }
+      pos.needsUpdate = true;
     }
 
     renderer.render(scene, camera);
@@ -626,6 +749,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         addBlock(Math.round(b.x), Math.round(b.y), Math.round(b.z), b.c);
       }
     },
+    setPerks(next: Partial<Perks>) { Object.assign(perks, next); },
     setHero(shirtHex: number, pantsHex: number) {
       kid.shirt.color.setHex(shirtHex);
       kid.pants.color.setHex(pantsHex);

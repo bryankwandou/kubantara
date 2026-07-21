@@ -2,8 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { createGame, PALETTE, type Spell, type GameStats } from "@/lib/voxel-game";
-import { ACHIEVEMENTS, HEROES, levelFromXp } from "@/lib/content";
+import { createGame, PALETTE, type Spell, type GameStats, type Perks } from "@/lib/voxel-game";
+import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
+import { music } from "@/lib/music";
+
+// Perk aktif berdasarkan level akun — keahlian benar-benar terasa di gameplay.
+function perksForLevel(level: number): Partial<Perks> {
+  const p: Partial<Perks> = {};
+  if (level >= 1) p.speedMul = 1.1;
+  if (level >= 2) p.jumpMul = 1.2;
+  if (level >= 3) p.reach = 2.6;
+  if (level >= 5) p.spellScale = 1.6;
+  if (level >= 6) { p.camExtra = 3; p.speedMul = 1.265; }
+  return p;
+}
 
 const SPELLS: { id: Spell; label: string }[] = [
   { id: "jembatan", label: "Jembatan" },
@@ -33,6 +45,12 @@ export default function PlayPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showHeroes, setShowHeroes] = useState(false);
+  const [showQuests, setShowQuests] = useState(false);
+  const [npc, setNpc] = useState<{ name: string; line: string } | null>(null);
+  const [weather, setWeather] = useState<"Cerah" | "Hujan" | "Pelangi">("Cerah");
+  const [musicOn, setMusicOn] = useState(false);
+  const [statsView, setStatsView] = useState<GameStats | null>(null);
+  const questsDoneRef = useRef<Set<string>>(new Set());
   const profileRef = useRef<Profile | null>(null);
   const statsRef = useRef<GameStats | null>(null);
   const starsRef = useRef(0);
@@ -55,6 +73,13 @@ export default function PlayPage() {
           showToast(`Pencapaian terbuka: ${a.name}`);
         }
       }
+      for (const q of QUESTS) {
+        if (!questsDoneRef.current.has(q.id) && (merged[q.stat] ?? 0) >= q.need) {
+          questsDoneRef.current.add(q.id);
+          showToast(`Misi selesai: ${q.name}`);
+        }
+      }
+      setStatsView(stats);
     },
     [showToast]
   );
@@ -94,6 +119,8 @@ export default function PlayPage() {
         statsRef.current = s;
         checkAchievements(s, starsRef.current);
       },
+      onNpc: (n) => setNpc(n),
+      onWeather: (w) => setWeather(w),
     });
     gameRef.current = game;
 
@@ -114,9 +141,12 @@ export default function PlayPage() {
       profileRef.current = prof;
       setProfile(prof);
       unlockedRef.current = new Set(prof.achievements);
+      questsDoneRef.current = new Set(Array.isArray(p?.quests) ? p.quests : []);
       if (Array.isArray(p?.blocks) && p.blocks.length) game.loadBlocks(p.blocks);
       const hero = HEROES.find((h) => h.id === prof.activeHero);
       if (hero) game.setHero(hero.shirt, hero.pants);
+      // keahlian terbuka bertambah kuat mengikuti level
+      game.setPerks(perksForLevel(Math.max(prof.level, levelFromXp(prof.xp))));
     })();
 
     const iv = setInterval(save, 20000);
@@ -125,9 +155,15 @@ export default function PlayPage() {
     return () => {
       clearInterval(iv);
       window.removeEventListener("pagehide", onHide);
+      music.stop();
       game.dispose();
     };
   }, [checkAchievements, save]);
+
+  const toggleMusic = useCallback(() => {
+    if (music.playing) { music.stop(); setMusicOn(false); }
+    else { music.start(); setMusicOn(true); }
+  }, []);
 
   // joystick sentuh
   useEffect(() => {
@@ -199,13 +235,36 @@ export default function PlayPage() {
         <div className="rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-sky-700 shadow">
           {time}
         </div>
+        <div className="rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-cyan-700 shadow">
+          {weather === "Cerah" ? "☀️ Cerah" : weather === "Hujan" ? "🌧️ Hujan" : "🌈 Pelangi"}
+        </div>
+        <button
+          onClick={() => setShowQuests((v) => !v)}
+          className="pointer-events-auto rounded-xl bg-amber-500/90 px-3 py-2 text-sm font-bold text-white shadow"
+        >
+          📜 Misi {questsDoneRef.current.size}/{QUESTS.length}
+        </button>
+        <button
+          onClick={toggleMusic}
+          className="pointer-events-auto rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-violet-700 shadow"
+        >
+          {musicOn ? "🎵 Musik" : "🔇 Musik"}
+        </button>
         {profile ? (
-          <button
-            onClick={() => setShowHeroes((v) => !v)}
-            className="pointer-events-auto rounded-xl bg-violet-500/90 px-3 py-2 text-sm font-bold text-white shadow"
-          >
-            {profile.username} · Lv {level}
-          </button>
+          <>
+            <button
+              onClick={() => setShowHeroes((v) => !v)}
+              className="pointer-events-auto rounded-xl bg-violet-500/90 px-3 py-2 text-sm font-bold text-white shadow"
+            >
+              {profile.username} · Lv {level}
+            </button>
+            <Link
+              href="/profil"
+              className="pointer-events-auto rounded-xl bg-white/85 px-3 py-2 text-sm font-bold text-violet-700 shadow"
+            >
+              👤 Profil
+            </Link>
+          </>
         ) : (
           <Link
             href="/masuk"
@@ -255,6 +314,53 @@ export default function PlayPage() {
           <p className="mt-2 text-xs text-slate-500">
             Pencapaian: {unlockedRef.current.size}/{ACHIEVEMENTS.length}
           </p>
+          <p className="text-xs text-slate-500">
+            Keahlian: {SKILLS.filter((s) => s.levelNeed <= (level ?? 1)).length}/{SKILLS.length}
+          </p>
+          {statsView && (
+            <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-slate-500">
+              <span>Balok: {statsView.blocksPlaced}</span>
+              <span>Sihir: {statsView.spellsCast}</span>
+              <span>Lompat: {statsView.jumps}</span>
+              <span>Tunggang: {statsView.rides}</span>
+              <span>Langkah: {Math.floor(statsView.distance)}</span>
+              <span>Sahabat: {statsView.npcMet}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Jurnal misi cerita */}
+      {showQuests && (
+        <div className="absolute right-3 top-16 z-20 max-h-[70vh] w-72 overflow-y-auto rounded-2xl bg-white/95 p-3 shadow-xl">
+          <p className="mb-2 text-sm font-black text-slate-800">Cerita Kubantara</p>
+          <div className="space-y-1.5">
+            {QUESTS.map((q) => {
+              const done = questsDoneRef.current.has(q.id);
+              return (
+                <div
+                  key={q.id}
+                  className={`rounded-xl px-2.5 py-1.5 text-xs ${
+                    done ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-600"
+                  }`}
+                >
+                  <p className="font-bold">
+                    {done ? "✅ " : "⭐ "}
+                    {q.name}
+                  </p>
+                  <p className="mt-0.5 leading-snug text-slate-500">{q.story}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Dialog NPC */}
+      {npc && (
+        <div className="pointer-events-none absolute bottom-32 left-1/2 z-20 w-[min(90vw,28rem)] -translate-x-1/2 rounded-2xl bg-slate-900/90 p-4 text-white shadow-xl">
+          <p className="text-sm font-black text-amber-300">{npc.name}</p>
+          <p className="mt-1 text-sm leading-relaxed">{npc.line}</p>
         </div>
       )}
 

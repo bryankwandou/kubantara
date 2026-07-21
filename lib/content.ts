@@ -84,6 +84,29 @@ export const GEAR: Gear[] = [
   { id: "mahkota-kubantara", name: "Mahkota Kubantara", desc: "Tanda sang legenda", levelNeed: 15 },
 ];
 
+export interface Quest {
+  id: string;
+  name: string;
+  story: string;
+  stat: string;
+  need: number;
+  xp: number;
+}
+
+// Alur cerita utama: bintang-bintang Kubantara padam, kembalikan cahayanya.
+export const QUESTS: Quest[] = [
+  { id: "cerita-1", name: "Kabar dari Penjaga", story: "Temui salah satu penduduk pulau. Mereka tahu kenapa bintang-bintang padam.", stat: "npcMet", need: 1, xp: 30 },
+  { id: "cerita-2", name: "Cahaya Pertama", story: "Kumpulkan 3 bintang untuk membuktikan cahaya masih bisa kembali.", stat: "stars", need: 3, xp: 40 },
+  { id: "cerita-3", name: "Bekal Sang Tukang", story: "Pasang 10 balok. Pulau butuh tangan yang mau membangun.", stat: "blocksPlaced", need: 10, xp: 40 },
+  { id: "cerita-4", name: "Mantra Pembuka", story: "Rapal 5 sihir agar gerbang cahaya lama terbuka.", stat: "spellsCast", need: 5, xp: 40 },
+  { id: "cerita-5", name: "Sahabat Berkaki Empat", story: "Naiki tunggangan 2 kali. Perjalanan jauh menanti.", stat: "rides", need: 2, xp: 50 },
+  { id: "cerita-6", name: "Enam Sahabat Desa", story: "Temui keenam penduduk pulau dan dengarkan kisah mereka.", stat: "npcMet", need: 6, xp: 80 },
+  { id: "cerita-7", name: "Setengah Langit", story: "Kumpulkan 12 bintang. Langit mulai berpendar lagi.", stat: "stars", need: 12, xp: 100 },
+  { id: "cerita-8", name: "Menara Harapan", story: "Pasang 80 balok dan dirikan sesuatu yang bisa dilihat dari jauh.", stat: "blocksPlaced", need: 80, xp: 120 },
+  { id: "cerita-9", name: "Penjaga Malam Tiba", story: "Bertahanlah melewati 2 malam. Kegelapan tidak seseram kelihatannya.", stat: "nights", need: 2, xp: 90 },
+  { id: "cerita-10", name: "Kembalinya Cahaya", story: "Kumpulkan seluruh 24 bintang dan pulihkan langit Kubantara.", stat: "stars", need: 24, xp: 300 },
+];
+
 export const MAX_LEVEL = 20;
 // XP yang dibutuhkan untuk naik ke level berikutnya
 export function xpForLevel(level: number) {
