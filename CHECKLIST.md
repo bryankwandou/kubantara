@@ -67,8 +67,9 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 - [x] Jinakkan satwa liar jadi peliharaan pengikut (bertahan setelah muat ulang)
 - [x] Multiplayer keluarga via kode yang diatur orang tua
 - [ ] Gua bawah tanah (butuh tabrakan volumetrik, bukan peta ketinggian)
-- [ ] Salju turun di biome salju
-- [ ] Sinkronisasi balok antar-pemain
+- [x] Salju turun di dataran tinggi (hujan berubah bentuk, bukan sistem kedua)
+- [x] Sinkronisasi balok antar-pemain sekeluarga
+- [x] Emote aman 6 lambang tetap, tanpa teks bebas
 - [ ] Rumah desa masih tembus badan (dekoratif, disengaja agar anak tak tersangkut)
 
 ## E. Antarmuka
@@ -84,6 +85,8 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 ## F. Kualitas & Operasional
 - [x] Build produksi lolos tanpa error TypeScript
 - [x] Deploy Vercel produksi + verifikasi HTTP 200
+- [x] **Vercel TIDAK auto-deploy dari GitHub.** Setelah `git push`, wajib jalankan
+      `npx vercel --prod --yes` sendiri. Pernah membuat kerja sehari tidak live.
 - [x] Repo publik GitHub tanpa satu pun rahasia
 - [x] Panel orang tua /ortu untuk 12 akun anak, dijaga peran (403 untuk anak)
 - [x] Batas waktu main harian yang benar-benar menghentikan permainan
