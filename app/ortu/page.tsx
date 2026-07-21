@@ -13,13 +13,30 @@ interface Anak {
   achievements: number;
   quests: number;
   playMinutes: number;
+  todayMinutes: number;
+  limitMinutes: number;
   lastPlayed: string | null;
   stats: Record<string, number>;
 }
 
+const PILIHAN_BATAS = [0, 30, 45, 60, 90, 120];
+
 export default function OrtuPage() {
   const [anak, setAnak] = useState<Anak[] | null>(null);
   const [err, setErr] = useState("");
+  const [simpan, setSimpan] = useState<number | null>(null);
+
+  async function ubahBatas(childId: number, minutes: number) {
+    setSimpan(childId);
+    const res = await fetch("/api/ortu", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ childId, minutes }),
+    });
+    setSimpan(null);
+    if (!res.ok) { setErr("Gagal menyimpan batas waktu"); return; }
+    setAnak((prev) => prev?.map((a) => (a.id === childId ? { ...a, limitMinutes: minutes } : a)) ?? prev);
+  }
 
   useEffect(() => {
     (async () => {
@@ -81,7 +98,9 @@ export default function OrtuPage() {
                   <th className="px-4 py-3">Bintang</th>
                   <th className="px-4 py-3">Pencapaian</th>
                   <th className="px-4 py-3">Misi</th>
-                  <th className="px-4 py-3">Waktu main</th>
+                  <th className="px-4 py-3">Hari ini</th>
+                  <th className="px-4 py-3">Total main</th>
+                  <th className="px-4 py-3">Batas harian</th>
                   <th className="px-4 py-3">Terakhir main</th>
                 </tr>
               </thead>
@@ -93,8 +112,24 @@ export default function OrtuPage() {
                     <td className="px-4 py-3 text-amber-300">{a.stars}/24</td>
                     <td className="px-4 py-3 text-emerald-300">{a.achievements}/{ACHIEVEMENTS.length}</td>
                     <td className="px-4 py-3 text-cyan-300">{a.quests}/{QUESTS.length}</td>
+                    <td className={`px-4 py-3 ${a.limitMinutes > 0 && a.todayMinutes >= a.limitMinutes ? "font-bold text-rose-400" : "text-slate-300"}`}>
+                      {a.todayMinutes}m
+                      {a.limitMinutes > 0 && <span className="text-slate-500"> / {a.limitMinutes}m</span>}
+                    </td>
                     <td className="px-4 py-3 text-slate-300">
                       {Math.floor(a.playMinutes / 60)}j {a.playMinutes % 60}m
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={a.limitMinutes}
+                        disabled={simpan === a.id}
+                        onChange={(e) => ubahBatas(a.id, Number(e.target.value))}
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-slate-100 disabled:opacity-50"
+                      >
+                        {PILIHAN_BATAS.map((m) => (
+                          <option key={m} value={m}>{m === 0 ? "Tanpa batas" : `${m} menit`}</option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-4 py-3 text-slate-400">
                       {a.lastPlayed ? new Date(a.lastPlayed).toLocaleDateString("id-ID", { day: "numeric", month: "short" }) : "Belum pernah"}
@@ -107,11 +142,12 @@ export default function OrtuPage() {
         )}
 
         <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
-          <p className="font-bold text-slate-300">Catatan jujur soal batas waktu main</p>
+          <p className="font-bold text-slate-300">Cara kerja batas waktu</p>
           <p className="mt-1 leading-relaxed">
-            Batas waktu otomatis belum aktif. Waktu main sudah dicatat dan bisa dipantau di
-            tabel ini, tapi permainan belum berhenti sendiri saat batas tercapai. Untuk
-            sekarang pemantauan masih manual.
+            Batas dicek setiap kali permainan menyimpan progres (tiap 20 detik), jadi anak
+            bisa lewat paling lama sekitar 20 detik dari batas. Saat batas tercapai, layar
+            &ldquo;Waktunya istirahat&rdquo; muncul dan progres tersimpan aman. Penghitung
+            kembali nol tiap ganti hari. Pilih &ldquo;Tanpa batas&rdquo; untuk mematikannya.
           </p>
         </div>
       </div>
