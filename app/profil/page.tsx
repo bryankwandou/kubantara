@@ -141,6 +141,7 @@ export default function ProfilPage() {
             <Mini label="Langkah" value={Math.floor(p.stats.distance ?? 0)} />
             <Mini label="Malam dilalui" value={p.stats.nights ?? 0} />
             <Mini label="Sahabat ditemui" value={p.stats.npcMet ?? 0} />
+            <Mini label="Satwa dijinakkan" value={p.stats.tamed ?? 0} />
           </div>
         </Section>
 

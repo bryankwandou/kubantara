@@ -43,6 +43,7 @@ export const PALETTE = [
 ];
 
 export type Spell = "jembatan" | "bunga" | "kembang-api" | "pohon";
+export type Blueprint = "rumah" | "menara" | "tangga" | "pagar";
 
 export interface GameHooks {
   onStars: (collected: number, total: number) => void;
@@ -62,6 +63,7 @@ export interface GameStats {
   distance: number;
   nights: number;
   npcMet: number;
+  tamed: number;
 }
 
 export interface Perks {
@@ -236,7 +238,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const placed: { x: number; y: number; z: number; c: number }[] = [];
   const stats: GameStats = {
     blocksPlaced: 0, blocksRemoved: 0, spellsCast: 0,
-    rides: 0, jumps: 0, distance: 0, nights: 0, npcMet: 0,
+    rides: 0, jumps: 0, distance: 0, nights: 0, npcMet: 0, tamed: 0,
   };
   const perks: Perks = {
     speedMul: 1, jumpMul: 1, reach: 1.6, spellScale: 1, camExtra: 0,
@@ -364,15 +366,25 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   let riding = false;
 
   // satwa liar (berkeliaran)
-  const wildlife: { c: ReturnType<typeof buildCritter>; dir: number; timer: number }[] = [];
+  const wildlife: {
+    c: ReturnType<typeof buildCritter>;
+    dir: number; timer: number; tamed: boolean; heart: THREE.Mesh;
+  }[] = [];
+  const heartGeo = new THREE.OctahedronGeometry(0.16);
+  const heartMat = new THREE.MeshBasicMaterial({ color: 0xff6b9d });
   for (let i = 0; i < 8; i++) {
     const col = [0xffffff, 0xdddddd, 0xf7c59f, 0x9ad1f5][i % 4];
     const c = buildCritter(col, 0.4, 0.3, 0.55);
     const x = Math.floor((hash(i, 5) - 0.5) * (WORLD - 20));
     const z = Math.floor((hash(i, 9) - 0.5) * (WORLD - 20));
     c.g.position.set(x, groundAt(x, z), z);
+    // hati kecil muncul di atas satwa yang sudah dijinakkan
+    const heart = new THREE.Mesh(heartGeo, heartMat);
+    heart.position.y = 1.1;
+    heart.visible = false;
+    c.g.add(heart);
     scene.add(c.g);
-    wildlife.push({ c, dir: hash(i, 3) * Math.PI * 2, timer: 0 });
+    wildlife.push({ c, dir: hash(i, 3) * Math.PI * 2, timer: 0, tamed: false, heart });
   }
 
   // ---------- penduduk pulau (NPC cerita) ----------
@@ -639,6 +651,15 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
     // ----- satwa liar -----
     for (const w of wildlife) {
+      if (w.tamed) {
+        // satwa jinak berjalan mengikuti pemain, berhenti saat sudah dekat
+        w.heart.rotation.y += dt * 2;
+        w.heart.position.y = 1.1 + Math.sin(t * 3) * 0.08;
+        const d = w.c.g.position.distanceTo(player.position);
+        if (d > 2.5)
+          stepCritter(w.c, player.position.x, player.position.z, 4.5, dt, t * 8);
+        continue;
+      }
       w.timer -= dt;
       if (w.timer <= 0) { w.dir = Math.random() * Math.PI * 2; w.timer = 2 + Math.random() * 3; }
       const tx = w.c.g.position.x + Math.sin(w.dir) * 3;
@@ -797,6 +818,62 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         if (placed.length >= MAX_PLACED) break;
         addBlock(Math.round(b.x), Math.round(b.y), Math.round(b.z), b.c);
       }
+    },
+    // Jinakkan satwa liar terdekat. Ramah: cukup mendekat lalu menekan tombol.
+    tameNearest() {
+      let best: (typeof wildlife)[number] | null = null;
+      let bestD = 4; // harus benar-benar dekat
+      for (const w of wildlife) {
+        if (w.tamed) continue;
+        const d = w.c.g.position.distanceTo(player.position);
+        if (d < bestD) { bestD = d; best = w; }
+      }
+      if (!best) return false;
+      best.tamed = true;
+      best.heart.visible = true;
+      bump("tamed");
+      sfx.star();
+      return true;
+    },
+    // Cetakan bangunan: satu tekan berdiri di depan pemain.
+    buildBlueprint(kind: Blueprint) {
+      const t = targetCell();
+      const before = placed.length;
+      const wood = 0x7a4f2a, leaf = 0x3e9e3e, stone = 0x9aa2ab;
+      if (kind === "rumah") {
+        for (let dx = -2; dx <= 2; dx++)
+          for (let dz = -2; dz <= 2; dz++) {
+            const edge = Math.abs(dx) === 2 || Math.abs(dz) === 2;
+            if (!edge) continue;
+            for (let dy = 0; dy < 3; dy++) {
+              if (dx === -2 && dz === 0 && dy < 2) continue; // pintu
+              addBlock(t.x + dx, t.y + dy, t.z + dz, wood);
+            }
+          }
+        for (let dx = -2; dx <= 2; dx++)
+          for (let dz = -2; dz <= 2; dz++) addBlock(t.x + dx, t.y + 3, t.z + dz, leaf);
+      } else if (kind === "menara") {
+        for (let dy = 0; dy < 10; dy++)
+          for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]])
+            addBlock(t.x + dx, t.y + dy, t.z + dz, stone);
+        for (let dx = -1; dx <= 2; dx++)
+          for (let dz = -1; dz <= 2; dz++) addBlock(t.x + dx, t.y + 10, t.z + dz, placeColor);
+      } else if (kind === "tangga") {
+        for (let s = 0; s < 8; s++)
+          for (let w = 0; w < 2; w++)
+            for (let dy = 0; dy <= s; dy++)
+              addBlock(t.x + s, t.y + dy, t.z + w, placeColor);
+      } else if (kind === "pagar") {
+        for (let i = -4; i <= 4; i++) {
+          addBlock(t.x + i, t.y, t.z - 4, wood);
+          addBlock(t.x + i, t.y, t.z + 4, wood);
+          addBlock(t.x - 4, t.y, t.z + i, wood);
+          addBlock(t.x + 4, t.y, t.z + i, wood);
+        }
+      }
+      const made = placed.length - before;
+      if (made > 0) { bump("blocksPlaced", made); sfx.place(); }
+      return made;
     },
     setPerks(next: Partial<Perks>) { Object.assign(perks, next); },
     setHero(shirtHex: number, pantsHex: number) {

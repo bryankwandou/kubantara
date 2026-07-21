@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { createGame, PALETTE, type Spell, type GameStats, type Perks } from "@/lib/voxel-game";
+import { createGame, PALETTE, type Spell, type GameStats, type Perks, type Blueprint } from "@/lib/voxel-game";
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
 import { music } from "@/lib/music";
 
@@ -18,6 +18,13 @@ function perksForLevel(level: number): Partial<Perks> {
   if (level >= 8) p.nightGlow = true;
   return p;
 }
+
+const BLUEPRINTS: { id: Blueprint; label: string }[] = [
+  { id: "rumah", label: "🏠 Rumah" },
+  { id: "menara", label: "🗼 Menara" },
+  { id: "tangga", label: "🪜 Tangga" },
+  { id: "pagar", label: "🚧 Pagar" },
+];
 
 const SPELLS: { id: Spell; label: string }[] = [
   { id: "jembatan", label: "Jembatan" },
@@ -394,6 +401,22 @@ export default function PlayPage() {
         ))}
       </div>
 
+      {/* Cetakan bangunan sekali tekan */}
+      <div className="absolute bottom-8 left-1/2 flex -translate-x-1/2 gap-1.5 rounded-2xl bg-white/80 p-1.5 shadow">
+        {BLUEPRINTS.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => {
+              const made = gameRef.current?.buildBlueprint(b.id) ?? 0;
+              showToast(made > 0 ? `${b.label} berdiri! (${made} balok)` : "Tempatnya penuh, coba geser sedikit");
+            }}
+            className="rounded-xl bg-sky-500/90 px-2.5 py-2 text-xs font-bold text-white shadow transition-transform hover:scale-105 active:scale-95"
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+
       {/* Aksi bangun / bongkar / tunggang (kanan) */}
       <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
         <button
@@ -407,6 +430,15 @@ export default function PlayPage() {
           className="rounded-xl bg-rose-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
         >
           Bongkar
+        </button>
+        <button
+          onClick={() => {
+            const ok = gameRef.current?.tameNearest();
+            showToast(ok ? "Satwa jadi sahabatmu! ❤️" : "Dekati dulu satwanya, lalu coba lagi");
+          }}
+          className="rounded-xl bg-pink-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+        >
+          Jinakkan
         </button>
         <button
           onClick={() => gameRef.current?.toggleRide()}
