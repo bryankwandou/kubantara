@@ -33,6 +33,10 @@ export function ensureSchema() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`;
       await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '[]'`;
+      // peran akun: 'anak' (bawaan) atau 'ortu' yang boleh melihat panel pengawasan
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'anak'`;
+      // total waktu bermain, dipakai panel orang tua
+      await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS play_seconds INT NOT NULL DEFAULT 0`;
     })();
   }
   return ready;

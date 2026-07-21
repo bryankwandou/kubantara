@@ -33,6 +33,8 @@ export async function PUT(req: Request) {
   const stats: Record<string, number> = {};
   for (const [k, v] of Object.entries(body.stats ?? {}))
     if (typeof v === "number" && isFinite(v)) stats[k] = Math.max(0, Math.floor(v));
+  // durasi sesi sejak simpanan terakhir; dibatasi agar tidak bisa dipalsukan besar-besaran
+  const sessionSeconds = Math.min(600, Math.max(0, Math.floor(Number(body.sessionSeconds) || 0)));
   const stars = Math.min(24, Math.max(0, Math.floor(Number(body.stars) || 0)));
   stats.stars = Math.max(stats.stars ?? 0, stars);
 
@@ -78,18 +80,21 @@ export async function PUT(req: Request) {
     ? String(body.activeHero)
     : (prev?.active_hero ?? "penjelajah");
 
+  const playSeconds = Number(prev?.play_seconds ?? 0) + sessionSeconds;
+
   await sql`
-    INSERT INTO progress (user_id, level, xp, stars, blocks, stats, achievements, skills, heroes, gear, active_hero, quests, updated_at)
+    INSERT INTO progress (user_id, level, xp, stars, blocks, stats, achievements, skills, heroes, gear, active_hero, quests, play_seconds, updated_at)
     VALUES (${user.id}, ${level}, ${xp}, ${stats.stars}, ${JSON.stringify(blocks)}, ${JSON.stringify(stats)},
             ${JSON.stringify(achievements)}, ${JSON.stringify(Array.from(new Set([...(prev?.skills as string[] ?? []), ...skills])))},
             ${JSON.stringify(allHeroes)}, ${JSON.stringify(Array.from(new Set([...(prev?.gear as string[] ?? []), ...gear])))},
-            ${activeHero}, ${JSON.stringify(questsDone)}, NOW())
+            ${activeHero}, ${JSON.stringify(questsDone)}, ${playSeconds}, NOW())
     ON CONFLICT (user_id) DO UPDATE SET
       level = EXCLUDED.level, xp = EXCLUDED.xp, stars = EXCLUDED.stars,
       blocks = EXCLUDED.blocks, stats = EXCLUDED.stats,
       achievements = EXCLUDED.achievements, skills = EXCLUDED.skills,
       heroes = EXCLUDED.heroes, gear = EXCLUDED.gear,
-      active_hero = EXCLUDED.active_hero, quests = EXCLUDED.quests, updated_at = NOW()`;
+      active_hero = EXCLUDED.active_hero, quests = EXCLUDED.quests,
+      play_seconds = EXCLUDED.play_seconds, updated_at = NOW()`;
 
   return NextResponse.json({ ok: true, level, xp, achievements, quests: questsDone });
 }

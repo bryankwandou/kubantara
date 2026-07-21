@@ -60,6 +60,7 @@ export default function PlayPage() {
   const [musicOn, setMusicOn] = useState(false);
   const [statsView, setStatsView] = useState<GameStats | null>(null);
   const questsDoneRef = useRef<Set<string>>(new Set());
+  const lastSaveRef = useRef<number>(Date.now());
   const profileRef = useRef<Profile | null>(null);
   const statsRef = useRef<GameStats | null>(null);
   const starsRef = useRef(0);
@@ -96,6 +97,10 @@ export default function PlayPage() {
   const save = useCallback(async () => {
     if (!profileRef.current || !gameRef.current) return;
     const g = gameRef.current;
+    // waktu bermain sejak simpanan terakhir, untuk panel orang tua
+    const now = Date.now();
+    const sessionSeconds = Math.round((now - lastSaveRef.current) / 1000);
+    lastSaveRef.current = now;
     try {
       await fetch("/api/progress", {
         method: "PUT",
@@ -106,6 +111,7 @@ export default function PlayPage() {
           stars: g.getStars(),
           blocks: g.exportBlocks(),
           activeHero: profileRef.current.activeHero,
+          sessionSeconds,
         }),
       });
     } catch {
