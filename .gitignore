@@ -33,6 +33,10 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# kredensial akun anak — jangan pernah masuk repo
+akun-anak.txt
+nama-anak.txt
+
 # vercel
 .vercel
 
