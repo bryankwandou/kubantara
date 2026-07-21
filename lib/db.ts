@@ -29,8 +29,10 @@ export function ensureSchema() {
         heroes JSONB NOT NULL DEFAULT '[]',
         gear JSONB NOT NULL DEFAULT '[]',
         active_hero TEXT NOT NULL DEFAULT 'penjelajah',
+        quests JSONB NOT NULL DEFAULT '[]',
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`;
+      await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '[]'`;
     })();
   }
   return ready;
