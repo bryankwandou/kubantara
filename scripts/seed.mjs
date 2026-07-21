@@ -45,30 +45,38 @@ await sql`CREATE TABLE IF NOT EXISTS progress (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`;
 
+// kolom tambahan yang menyusul setelah rilis pertama
+await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '[]'`;
+await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS play_seconds INT NOT NULL DEFAULT 0`;
+await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'anak'`;
+
 // katalog harus cocok dengan lib/content.ts
-const ACH = ["bintang-1","bintang-8","bintang-24","balok-1","balok-50","balok-300","bongkar-20","sihir-1","sihir-30","sihir-100","naik-1","naik-15","lompat-100","jelajah-1000","jelajah-5000","malam-1"];
+const ACH = ["bintang-1","bintang-8","bintang-24","balok-1","balok-50","balok-300","bongkar-20","sihir-1","sihir-30","sihir-100","naik-1","naik-15","lompat-100","jelajah-1000","jelajah-5000","malam-1","jinak-1","jinak-5"];
+const QUESTS = ["cerita-1","cerita-2","cerita-3","cerita-4","cerita-5","cerita-6","cerita-7","cerita-8","cerita-9","cerita-10","cerita-11"];
 const SKILLS = ["langkah-cepat","lompat-tinggi","tangan-ajaib","panggil-hewan","sihir-ganda","mata-elang","kaki-air","cahaya-malam"];
 const HEROES = ["penjelajah","penyihir","penjaga-hutan","pelaut","penjaga-fajar","bayangan-baik"];
 const GEAR = ["palu-kayu","tongkat-bunga","palu-batu","tongkat-pelangi","sepatu-angin","peluit-emas","jubah-bintang","mahkota-kubantara"];
 const stats = {
   stars: 24, blocksPlaced: 500, blocksRemoved: 100, spellsCast: 150,
-  rides: 30, jumps: 300, distance: 8000, nights: 10,
+  rides: 30, jumps: 300, distance: 8000, nights: 10, npcMet: 6, tamed: 8,
 };
+// 'anak' (bawaan) atau 'ortu' untuk akun yang boleh membuka panel pengawasan
+const ROLE = process.env.SEED_ROLE === "ortu" ? "ortu" : "anak";
 
 const hash = await bcrypt.hash(PASS, 10);
 const rows = await sql`
-  INSERT INTO users (username, email, password_hash, accepted_terms)
-  VALUES (${USER}, ${EMAIL}, ${hash}, TRUE)
-  ON CONFLICT (username) DO UPDATE SET password_hash = ${hash}
+  INSERT INTO users (username, email, password_hash, accepted_terms, role)
+  VALUES (${USER}, ${EMAIL}, ${hash}, TRUE, ${ROLE})
+  ON CONFLICT (username) DO UPDATE SET password_hash = ${hash}, role = ${ROLE}
   RETURNING id`;
 const id = rows[0].id;
 await sql`
-  INSERT INTO progress (user_id, level, xp, stars, blocks, stats, achievements, skills, heroes, gear, active_hero)
-  VALUES (${id}, 20, 99999, 24, '[]', ${JSON.stringify(stats)}, ${JSON.stringify(ACH)},
+  INSERT INTO progress (user_id, level, xp, stars, blocks, stats, achievements, quests, skills, heroes, gear, active_hero)
+  VALUES (${id}, 20, 99999, 24, '[]', ${JSON.stringify(stats)}, ${JSON.stringify(ACH)}, ${JSON.stringify(QUESTS)},
           ${JSON.stringify(SKILLS)}, ${JSON.stringify(HEROES)}, ${JSON.stringify(GEAR)}, 'penjaga-fajar')
   ON CONFLICT (user_id) DO UPDATE SET
     level = 20, xp = 99999, stars = 24,
-    stats = EXCLUDED.stats, achievements = EXCLUDED.achievements,
+    stats = EXCLUDED.stats, achievements = EXCLUDED.achievements, quests = EXCLUDED.quests,
     skills = EXCLUDED.skills, heroes = EXCLUDED.heroes, gear = EXCLUDED.gear,
     active_hero = 'penjaga-fajar', updated_at = NOW()`;
-console.log(`Akun uji '${USER}' siap: level 20, 24 bintang, semua pencapaian/skill/pahlawan/peralatan terbuka.`);
+console.log(`Akun '${USER}' (peran: ${ROLE}) siap: level 20, 24 bintang, semua pencapaian/misi/skill/pahlawan/peralatan terbuka.`);

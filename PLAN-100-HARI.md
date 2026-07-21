@@ -32,15 +32,18 @@ Target: dari MVP menjadi game open-world web kelas AAA yang aman untuk anak, den
 - [ ] Pohon keahlian dengan poin yang bisa dipilih anak sendiri.
 - [ ] Peralatan memengaruhi gameplay (palu batu bongkar lebih cepat, dsb.).
 
-## Fase 5 (Hari 41–50) — Kreasi & Bangunan Lanjutan
-- Balok bentuk baru: tangga, setengah balok, kaca, lampu.
-- Cetakan bangunan (blueprint) sekali tekan.
-- Galeri kreasi: simpan beberapa dunia per akun.
+## Fase 5 (Hari 41–50) — Kreasi & Bangunan Lanjutan — SEBAGIAN
+- [x] Cetakan bangunan sekali tekan: rumah, menara, tangga, pagar.
+- [ ] Balok bentuk baru: tangga, setengah balok, kaca, lampu — butuh mesh
+      terpisah per bentuk, bukan satu InstancedMesh kubus seperti sekarang.
+- [ ] Galeri kreasi: simpan beberapa dunia per akun.
 
-## Fase 6 (Hari 51–60) — Satwa & Peliharaan Lanjutan
-- Jinakkan satwa liar jadi peliharaan baru.
-- Kandang, memberi makan, kostum peliharaan.
-- Tunggangan baru: terbang rendah, berenang.
+## Fase 6 (Hari 51–60) — Satwa & Peliharaan Lanjutan — SEBAGIAN
+- [x] Jinakkan satwa liar: dekati lalu tekan "Jinakkan"; satwa jinak bertanda
+      hati dan mengikuti pemain. Ada 2 pencapaian + 1 misi cerita.
+- [ ] Satwa jinak belum tersimpan ke database (hilang saat muat ulang).
+- [ ] Kandang, memberi makan, kostum peliharaan.
+- [ ] Tunggangan baru: terbang rendah, berenang.
 
 ## Fase 7 (Hari 61–70) — Musik & Suasana — SEBAGIAN
 - [x] Musik latar prosedural (pentatonik, Web Audio, tanpa berkas audio),
@@ -50,15 +53,20 @@ Target: dari MVP menjadi game open-world web kelas AAA yang aman untuk anak, den
 - [ ] Salju turun di biome salju.
 - [ ] Efek suara langkah per jenis permukaan.
 
-## Fase 8 (Hari 71–80) — Multiplayer Keluarga (aman)
-- Main bersama saudara di dunia yang sama (hanya lewat kode undangan keluarga).
-- Tanpa obrolan teks bebas — hanya emote dan stiker aman.
-- Sinkronisasi posisi dan balok via WebSocket.
+## Fase 8 (Hari 71–80) — Multiplayer Keluarga (aman) — BELUM DIKERJAKAN
+Butuh server WebSocket yang hidup terus. Vercel (hosting sekarang) hanya
+menjalankan fungsi tanpa status, jadi ini perlu layanan terpisah dan biaya
+bulanan. Keputusan ini menunggu persetujuan sebelum dikerjakan.
+- [ ] Main bersama saudara lewat kode undangan keluarga.
+- [ ] Tanpa obrolan teks bebas — hanya emote dan stiker aman.
+- [ ] Sinkronisasi posisi dan balok via WebSocket.
 
-## Fase 9 (Hari 81–90) — Panel Orang Tua
-- Dasbor orang tua: waktu main, progres tiap anak (12 akun).
-- Batas waktu main harian yang bisa diatur.
-- Login Google diaktifkan.
+## Fase 9 (Hari 81–90) — Panel Orang Tua — SEBAGIAN
+- [x] Dasbor /ortu: level, bintang, pencapaian, misi, dan waktu main tiap anak.
+- [x] Pencatatan waktu main (dibatasi 600 detik per simpanan agar tidak dipalsukan).
+- [x] Peran akun 'anak'/'ortu'; panel menolak akun anak dengan kode 403.
+- [ ] Batas waktu main harian yang benar-benar menghentikan permainan.
+- [ ] Login Google diaktifkan.
 
 ## Fase 10 (Hari 91–100) — Poles & Rilis Besar
 - Optimasi performa (chunking dunia, LOD).
