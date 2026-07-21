@@ -37,6 +37,11 @@ export function ensureSchema() {
       await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'anak'`;
       // total waktu bermain, dipakai panel orang tua
       await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS play_seconds INT NOT NULL DEFAULT 0`;
+      // batas main harian (menit); 0 = tanpa batas. Diatur orang tua.
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_limit_minutes INT NOT NULL DEFAULT 0`;
+      // penghitung harian yang di-reset saat tanggalnya berganti
+      await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS play_today_seconds INT NOT NULL DEFAULT 0`;
+      await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS play_date DATE`;
     })();
   }
   return ready;

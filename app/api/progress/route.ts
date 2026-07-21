@@ -82,19 +82,35 @@ export async function PUT(req: Request) {
 
   const playSeconds = Number(prev?.play_seconds ?? 0) + sessionSeconds;
 
+  // penghitung harian: mulai dari nol kalau tanggalnya sudah berganti
+  const today = new Date().toISOString().slice(0, 10);
+  const prevDate = prev?.play_date ? new Date(prev.play_date as string).toISOString().slice(0, 10) : null;
+  const todaySeconds = (prevDate === today ? Number(prev?.play_today_seconds ?? 0) : 0) + sessionSeconds;
+
+  const limitRows = await sql`SELECT daily_limit_minutes FROM users WHERE id = ${user.id}`;
+  const limitMinutes = Number(limitRows[0]?.daily_limit_minutes ?? 0);
+  const limitReached = limitMinutes > 0 && todaySeconds >= limitMinutes * 60;
+
   await sql`
-    INSERT INTO progress (user_id, level, xp, stars, blocks, stats, achievements, skills, heroes, gear, active_hero, quests, play_seconds, updated_at)
+    INSERT INTO progress (user_id, level, xp, stars, blocks, stats, achievements, skills, heroes, gear, active_hero, quests, play_seconds, play_today_seconds, play_date, updated_at)
     VALUES (${user.id}, ${level}, ${xp}, ${stats.stars}, ${JSON.stringify(blocks)}, ${JSON.stringify(stats)},
             ${JSON.stringify(achievements)}, ${JSON.stringify(Array.from(new Set([...(prev?.skills as string[] ?? []), ...skills])))},
             ${JSON.stringify(allHeroes)}, ${JSON.stringify(Array.from(new Set([...(prev?.gear as string[] ?? []), ...gear])))},
-            ${activeHero}, ${JSON.stringify(questsDone)}, ${playSeconds}, NOW())
+            ${activeHero}, ${JSON.stringify(questsDone)}, ${playSeconds}, ${todaySeconds}, ${today}, NOW())
     ON CONFLICT (user_id) DO UPDATE SET
       level = EXCLUDED.level, xp = EXCLUDED.xp, stars = EXCLUDED.stars,
       blocks = EXCLUDED.blocks, stats = EXCLUDED.stats,
       achievements = EXCLUDED.achievements, skills = EXCLUDED.skills,
       heroes = EXCLUDED.heroes, gear = EXCLUDED.gear,
       active_hero = EXCLUDED.active_hero, quests = EXCLUDED.quests,
-      play_seconds = EXCLUDED.play_seconds, updated_at = NOW()`;
+      play_seconds = EXCLUDED.play_seconds,
+      play_today_seconds = EXCLUDED.play_today_seconds, play_date = EXCLUDED.play_date,
+      updated_at = NOW()`;
 
-  return NextResponse.json({ ok: true, level, xp, achievements, quests: questsDone });
+  return NextResponse.json({
+    ok: true, level, xp, achievements, quests: questsDone,
+    limitReached,
+    limitMinutes,
+    minutesLeft: limitMinutes > 0 ? Math.max(0, Math.ceil((limitMinutes * 60 - todaySeconds) / 60)) : null,
+  });
 }

@@ -59,6 +59,7 @@ export default function PlayPage() {
   const [weather, setWeather] = useState<"Cerah" | "Hujan" | "Pelangi">("Cerah");
   const [musicOn, setMusicOn] = useState(false);
   const [statsView, setStatsView] = useState<GameStats | null>(null);
+  const [timeUp, setTimeUp] = useState(false);
   const questsDoneRef = useRef<Set<string>>(new Set());
   const lastSaveRef = useRef<number>(Date.now());
   const profileRef = useRef<Profile | null>(null);
@@ -102,7 +103,7 @@ export default function PlayPage() {
     const sessionSeconds = Math.round((now - lastSaveRef.current) / 1000);
     lastSaveRef.current = now;
     try {
-      await fetch("/api/progress", {
+      const res = await fetch("/api/progress", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         keepalive: true,
@@ -114,10 +115,14 @@ export default function PlayPage() {
           sessionSeconds,
         }),
       });
+      const data = await res.json().catch(() => null);
+      if (data?.limitReached) setTimeUp(true);
+      else if (typeof data?.minutesLeft === "number" && data.minutesLeft <= 5)
+        showToast(`Sisa waktu main hari ini: ${data.minutesLeft} menit`);
     } catch {
       // koneksi putus; coba lagi di siklus berikutnya
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -475,6 +480,26 @@ export default function PlayPage() {
       {toast && (
         <div className="pointer-events-none absolute bottom-40 left-1/2 -translate-x-1/2 rounded-2xl bg-slate-900/90 px-5 py-3 text-sm font-bold text-amber-300 shadow-xl">
           {toast}
+        </div>
+      )}
+
+      {/* Batas waktu main harian tercapai */}
+      {timeUp && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/85 px-6">
+          <div className="max-w-sm rounded-3xl bg-white p-8 text-center shadow-2xl">
+            <p className="text-5xl">🌙</p>
+            <p className="mt-3 text-2xl font-black text-slate-800">Waktunya istirahat</p>
+            <p className="mt-2 leading-relaxed text-slate-600">
+              Waktu bermain hari ini sudah habis. Semua hasil petualanganmu sudah
+              tersimpan dengan aman — besok bisa dilanjutkan lagi dari sini.
+            </p>
+            <Link
+              href="/profil"
+              className="mt-5 inline-block rounded-xl bg-emerald-500 px-6 py-3 font-bold text-white"
+            >
+              Lihat hasil petualanganku
+            </Link>
+          </div>
         </div>
       )}
 
