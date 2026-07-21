@@ -50,8 +50,9 @@ Target: dari MVP menjadi game open-world web kelas AAA yang aman untuk anak, den
 - [x] Musik latar prosedural (pentatonik, Web Audio, tanpa berkas audio),
       bisa dinyalakan/dimatikan dari HUD.
 - [x] Cuaca: cerah → hujan → pelangi, lengkap dengan peredupan cahaya matahari.
+- [x] Salju turun di dataran tinggi: hujan berubah jadi butiran putih yang
+      melayang pelan, memakai ulang sistem partikel yang sama.
 - [ ] Musik berubah mengikuti waktu dan biome.
-- [ ] Salju turun di biome salju.
 - [ ] Efek suara langkah per jenis permukaan.
 
 ## Fase 8 (Hari 71–80) — Multiplayer Keluarga (aman) — SEBAGIAN
@@ -62,8 +63,9 @@ jeda ~2 detik — cukup untuk main bangun bareng, tidak cukup untuk kejar-kejara
 - [x] Avatar saudara muncul di dunia, bergerak halus (interpolasi).
 - [x] Tanpa obrolan teks sama sekali — hanya posisi dan nama yang dikirim.
 - [x] Polling mati sendiri kalau akun tidak punya kode, supaya hemat kuota database.
-- [ ] Sinkronisasi balok antar-pemain (baru posisi pemain yang tersinkron).
-- [ ] Emote dan stiker aman.
+- [x] Sinkronisasi balok: balok yang dibangun kakak muncul di layar adik.
+- [x] Emote aman: 6 lambang tetap (👋 ❤️ 😀 🎉 ⭐ 👍), tampil 4 detik di atas
+      kepala. Tidak ada teks yang bisa diketik anak.
 - [ ] **Risiko biaya:** 12 anak online serentak ≈ 6 permintaan/detik ke database.
       Perlu dipantau di dasbor Neon; kalau kuota gratis tekor, naikkan jeda
       polling ke 4-5 detik.
