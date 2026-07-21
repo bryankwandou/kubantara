@@ -169,6 +169,42 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       }
     }
   }
+  // ---------- desa: rumah kecil di dekat tiap penduduk ----------
+  // Koordinat harus sejalan dengan NPC_DATA di bawah agar tiap penduduk punya rumah.
+  const VILLAGE_SPOTS = [
+    { x: 4, z: -6 }, { x: -14, z: 10 }, { x: 18, z: 14 },
+    { x: -24, z: -20 }, { x: 30, z: -12 }, { x: -8, z: 28 },
+  ];
+  const hAt = (x: number, z: number) => {
+    const xi = Math.round(x) + HALF, zi = Math.round(z) + HALF;
+    return heights[xi]?.[zi] ?? 0;
+  };
+  for (const spot of VILLAGE_SPOTS) {
+    // rumah dibangun 3 blok di samping penduduk supaya pintunya menghadap mereka
+    const bx = spot.x + 3, bz = spot.z;
+    const base = hAt(bx, bz) + 1;
+    const R = 2; // setengah lebar rumah (rumah 5x5)
+    for (let dx = -R; dx <= R; dx++) {
+      for (let dz = -R; dz <= R; dz++) {
+        const edge = Math.abs(dx) === R || Math.abs(dz) === R;
+        if (!edge) continue;
+        // lubang pintu di sisi yang menghadap penduduk
+        const isDoor = dx === -R && dz === 0;
+        for (let dy = 0; dy < 3; dy++) {
+          if (isDoor && dy < 2) continue;
+          put(layers.wood, bx + dx, base + dy, bz + dz);
+        }
+      }
+    }
+    // atap daun bertingkat supaya terlihat seperti rumah panggung Nusantara
+    for (let dx = -R - 1; dx <= R + 1; dx++)
+      for (let dz = -R - 1; dz <= R + 1; dz++)
+        put(layers.leaf, bx + dx, base + 3, bz + dz);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++)
+        put(layers.leaf, bx + dx, base + 4, bz + dz);
+  }
+
   for (const key of Object.keys(layers) as Biome[]) {
     const l = layers[key];
     const mesh = new THREE.InstancedMesh(
