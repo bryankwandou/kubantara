@@ -1,0 +1,12 @@
+import { chromium } from "playwright";
+const br=await chromium.launch({args:["--use-gl=swiftshader","--enable-unsafe-swiftshader"]});
+const p=await (await br.newContext({viewport:{width:1366,height:768}})).newPage();
+await p.goto("http://localhost:3000/play",{waitUntil:"networkidle"});
+await p.waitForSelector("canvas"); await p.waitForTimeout(4000);
+const fps=await p.evaluate(()=>new Promise(res=>{let n=0;const t0=performance.now();
+  const tick=()=>{n++; if(performance.now()-t0<5000) requestAnimationFrame(tick); else res(n/((performance.now()-t0)/1000));};
+  requestAnimationFrame(tick);}));
+console.log("FPS di browser headless (rendering perangkat lunak):", fps.toFixed(1));
+console.log("dt dibatasi 0,05 -> waktu game maju", (fps*0.05).toFixed(2), "detik per detik nyata");
+console.log(fps>=20 ? "FPS memadai" : "FPS RENDAH — gerakan jadi lambat, ini menjelaskan jarak 0");
+await br.close();
