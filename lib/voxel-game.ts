@@ -70,6 +70,8 @@ export interface Perks {
   reach: number;      // jarak pasang balok
   spellScale: number; // besaran efek sihir
   camExtra: number;   // tambahan jarak kamera
+  waterWalk: boolean; // melaju cepat saat berada di perairan dangkal
+  nightGlow: boolean; // sekeliling pemain bersinar saat malam
 }
 
 export interface SavedBlock { x: number; y: number; z: number; c: number }
@@ -97,7 +99,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   scam.left = -80; scam.right = 80; scam.top = 80; scam.bottom = -80;
   const ambient = new THREE.AmbientLight(0xbfd9ff, 0.9);
   const moon = new THREE.DirectionalLight(0x9fb8ff, 0.0);
-  scene.add(sun, ambient, moon);
+  // Cahaya Malam: lentera tak terlihat yang mengikuti pemain saat gelap
+  const glow = new THREE.PointLight(0xffe6a8, 0, 18, 2);
+  scene.add(sun, ambient, moon, glow);
 
   // bola matahari & bulan (dekorasi)
   const sunBall = new THREE.Mesh(
@@ -234,7 +238,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     blocksPlaced: 0, blocksRemoved: 0, spellsCast: 0,
     rides: 0, jumps: 0, distance: 0, nights: 0, npcMet: 0,
   };
-  const perks: Perks = { speedMul: 1, jumpMul: 1, reach: 1.6, spellScale: 1, camExtra: 0 };
+  const perks: Perks = {
+    speedMul: 1, jumpMul: 1, reach: 1.6, spellScale: 1, camExtra: 0,
+    waterWalk: false, nightGlow: false,
+  };
   const bump = (k: keyof GameStats, n = 1) => {
     stats[k] += n;
     hooks.onStat?.(stats);
@@ -555,6 +562,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     sun.intensity = daylight * 2.2 * weatherDim;
     ambient.intensity = (0.3 + daylight * 0.7) * (0.6 + weatherDim * 0.4);
     moon.intensity = (1 - daylight) * 0.5;
+    // lentera hanya menyala saat gelap, dan hanya jika keahliannya terbuka
+    glow.intensity = perks.nightGlow ? (1 - daylight) * 2.4 : 0;
+    glow.position.copy(player.position).add(new THREE.Vector3(0, 2, 0));
     const sky = skyNight.clone();
     if (daylight > 0.5) sky.lerpColors(skyDusk, skyDay, (daylight - 0.5) * 2);
     else sky.lerpColors(skyNight, skyDusk, daylight * 2);
@@ -576,7 +586,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     const len = Math.hypot(ix, iz);
     if (len > 1) { ix /= len; iz /= len; }
     const moving = len > 0.15;
-    const speed = (riding ? 11 : 6) * perks.speedMul;
+    // Kaki Air: melaju lebih kencang saat berdiri di perairan dangkal
+    const onWater = groundAt(player.position.x, player.position.z) <= WATER_LEVEL + 0.5;
+    const waterBoost = perks.waterWalk && onWater ? 1.5 : 1;
+    const speed = (riding ? 11 : 6) * perks.speedMul * waterBoost;
 
     if (moving) {
       const a = Math.atan2(ix, iz) + camYaw;

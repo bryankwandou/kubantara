@@ -14,6 +14,8 @@ function perksForLevel(level: number): Partial<Perks> {
   if (level >= 3) p.reach = 2.6;
   if (level >= 5) p.spellScale = 1.6;
   if (level >= 6) { p.camExtra = 3; p.speedMul = 1.265; }
+  if (level >= 7) p.waterWalk = true;
+  if (level >= 8) p.nightGlow = true;
   return p;
 }
 
