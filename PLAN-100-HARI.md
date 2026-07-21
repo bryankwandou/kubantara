@@ -26,9 +26,9 @@ Target: dari MVP menjadi game open-world web kelas AAA yang aman untuk anak, den
 - [ ] Teleport antar-titik yang sudah ditemukan.
 
 ## Fase 4 (Hari 31–40) — Sistem Keahlian Aktif — SEBAGIAN
-- [x] Efek nyata 5 keahlian via sistem perk: lari cepat, lompat tinggi,
-      jangkauan bangun, sihir ganda, mata elang (jarak kamera).
-- [ ] Keahlian kaki-air & cahaya-malam.
+- [x] Efek nyata untuk kedelapan keahlian via sistem perk: lari cepat, lompat
+      tinggi, jangkauan bangun, sihir ganda, mata elang (jarak kamera),
+      kaki air (melaju di perairan dangkal), cahaya malam (lentera saat gelap).
 - [ ] Pohon keahlian dengan poin yang bisa dipilih anak sendiri.
 - [ ] Peralatan memengaruhi gameplay (palu batu bongkar lebih cepat, dsb.).
 
