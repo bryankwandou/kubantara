@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { createGame, PALETTE, type Spell, type GameStats, type Perks, type Blueprint } from "@/lib/voxel-game";
+import { createGame, PALETTE, SHAPES, type Spell, type GameStats, type Perks, type Blueprint, type Shape } from "@/lib/voxel-game";
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
 import { music } from "@/lib/music";
 
@@ -60,6 +60,7 @@ export default function PlayPage() {
   const [musicOn, setMusicOn] = useState(false);
   const [statsView, setStatsView] = useState<GameStats | null>(null);
   const [timeUp, setTimeUp] = useState(false);
+  const [shape, setShape] = useState<Shape>("kubus");
   const questsDoneRef = useRef<Set<string>>(new Set());
   const lastSaveRef = useRef<number>(Date.now());
   const profileRef = useRef<Profile | null>(null);
@@ -397,6 +398,21 @@ export default function PlayPage() {
             }`}
             style={{ backgroundColor: `#${p.hex.toString(16).padStart(6, "0")}` }}
           />
+        ))}
+      </div>
+
+      {/* Pilih bentuk balok */}
+      <div className="absolute left-1/2 top-16 flex -translate-x-1/2 gap-1.5 rounded-2xl bg-white/80 p-1.5 shadow">
+        {SHAPES.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => { setShape(s.id); gameRef.current?.setShape(s.id); }}
+            className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+              shape === s.id ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {s.name}
+          </button>
         ))}
       </div>
 

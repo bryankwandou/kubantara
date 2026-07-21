@@ -38,16 +38,22 @@ export async function PUT(req: Request) {
   const stars = Math.min(24, Math.max(0, Math.floor(Number(body.stars) || 0)));
   stats.stars = Math.max(stats.stars ?? 0, stars);
 
+  const SHAPES = new Set(["kubus", "kaca", "lampu", "setengah"]);
   const blocks = Array.isArray(body.blocks)
-    ? body.blocks.slice(0, 4000).filter(
-        (b: unknown): b is { x: number; y: number; z: number; c: number } => {
+    ? body.blocks
+        .slice(0, 4000)
+        .filter((b: unknown) => {
           const o = b as Record<string, unknown>;
           return (
             typeof o?.x === "number" && typeof o?.y === "number" &&
             typeof o?.z === "number" && typeof o?.c === "number"
           );
-        }
-      )
+        })
+        .map((b: Record<string, unknown>) => ({
+          x: b.x, y: b.y, z: b.z, c: b.c,
+          // bentuk tak dikenal dijadikan kubus, jangan dipercaya mentah-mentah
+          s: typeof b.s === "string" && SHAPES.has(b.s) ? b.s : "kubus",
+        }))
     : [];
 
   // progres tidak pernah mundur: gabungkan dengan yang tersimpan

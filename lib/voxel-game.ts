@@ -44,6 +44,14 @@ export const PALETTE = [
 
 export type Spell = "jembatan" | "bunga" | "kembang-api" | "pohon";
 export type Blueprint = "rumah" | "menara" | "tangga" | "pagar";
+// Bentuk balok yang bisa dipasang anak.
+export type Shape = "kubus" | "kaca" | "lampu" | "setengah";
+export const SHAPES: { id: Shape; name: string }[] = [
+  { id: "kubus", name: "Balok" },
+  { id: "kaca", name: "Kaca" },
+  { id: "lampu", name: "Lampu" },
+  { id: "setengah", name: "Setengah" },
+];
 
 export interface GameHooks {
   onStars: (collected: number, total: number) => void;
@@ -76,7 +84,8 @@ export interface Perks {
   nightGlow: boolean; // sekeliling pemain bersinar saat malam
 }
 
-export interface SavedBlock { x: number; y: number; z: number; c: number }
+// `s` menyusul setelah rilis pertama; simpanan lama tanpa `s` dianggap kubus.
+export interface SavedBlock { x: number; y: number; z: number; c: number; s?: Shape }
 
 export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -223,19 +232,28 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   }
 
   // ---------- blok yang dipasang pemain (dinamis) ----------
-  const placedMesh = new THREE.InstancedMesh(
-    box, new THREE.MeshLambertMaterial({ vertexColors: false }), MAX_PLACED
-  );
-  placedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  placedMesh.count = 0;
-  placedMesh.castShadow = true;
-  placedMesh.receiveShadow = true;
-  // warna per instance
-  placedMesh.instanceColor = new THREE.InstancedBufferAttribute(
-    new Float32Array(MAX_PLACED * 3), 3
-  );
-  scene.add(placedMesh);
-  const placed: { x: number; y: number; z: number; c: number }[] = [];
+  // Satu InstancedMesh per bentuk; semuanya memakai warna per-instance.
+  const halfBox = new THREE.BoxGeometry(1, 0.5, 1);
+  function makeShapeMesh(geo: THREE.BufferGeometry, mat: THREE.Material) {
+    const mesh = new THREE.InstancedMesh(geo, mat, MAX_PLACED);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PLACED * 3), 3);
+    scene.add(mesh);
+    return mesh;
+  }
+  const shapeMeshes: Record<Shape, THREE.InstancedMesh> = {
+    kubus: makeShapeMesh(box, new THREE.MeshLambertMaterial()),
+    kaca: makeShapeMesh(box, new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.4 })),
+    // lampu memancarkan cahayanya sendiri agar terlihat menyala saat malam
+    lampu: makeShapeMesh(box, new THREE.MeshLambertMaterial({ emissive: 0xffffff, emissiveIntensity: 0.55 })),
+    setengah: makeShapeMesh(halfBox, new THREE.MeshLambertMaterial()),
+  };
+  // kaca tidak menjatuhkan bayangan supaya tetap terasa tembus pandang
+  shapeMeshes.kaca.castShadow = false;
+  const placed: { x: number; y: number; z: number; c: number; s: Shape }[] = [];
   const stats: GameStats = {
     blocksPlaced: 0, blocksRemoved: 0, spellsCast: 0,
     rides: 0, jumps: 0, distance: 0, nights: 0, npcMet: 0, tamed: 0,
@@ -251,30 +269,42 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const colTop = new Map<string, number>(); // "x,z" -> puncak blok pasang
   const tmpColor = new THREE.Color();
 
-  function rebuildPlaced() {
-    for (let i = 0; i < placed.length; i++) {
-      m.identity().setPosition(placed[i].x, placed[i].y, placed[i].z);
-      placedMesh.setMatrixAt(i, m);
-      tmpColor.setHex(placed[i].c);
-      placedMesh.setColorAt(i, tmpColor);
+  // jumlah instance terpakai per bentuk
+  const shapeCount: Record<Shape, number> = { kubus: 0, kaca: 0, lampu: 0, setengah: 0 };
+
+  // Tulis satu blok ke mesh bentuknya. Setengah balok duduk di separuh bawah sel.
+  function writeInstance(b: { x: number; y: number; z: number; c: number; s: Shape }) {
+    const mesh = shapeMeshes[b.s];
+    const i = shapeCount[b.s]++;
+    m.identity().setPosition(b.x, b.s === "setengah" ? b.y - 0.25 : b.y, b.z);
+    mesh.setMatrixAt(i, m);
+    tmpColor.setHex(b.c);
+    mesh.setColorAt(i, tmpColor);
+  }
+
+  function flushShapes() {
+    for (const s of Object.keys(shapeMeshes) as Shape[]) {
+      const mesh = shapeMeshes[s];
+      mesh.count = shapeCount[s];
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
-    placedMesh.count = placed.length;
-    placedMesh.instanceMatrix.needsUpdate = true;
-    if (placedMesh.instanceColor) placedMesh.instanceColor.needsUpdate = true;
+  }
+
+  function rebuildPlaced() {
+    shapeCount.kubus = shapeCount.kaca = shapeCount.lampu = shapeCount.setengah = 0;
+    for (const b of placed) writeInstance(b);
+    flushShapes();
   }
 
   let placeColor = PALETTE[0].hex;
-  function addBlock(x: number, y: number, z: number, color: number) {
+  let placeShape: Shape = "kubus";
+  function addBlock(x: number, y: number, z: number, color: number, shape: Shape = "kubus") {
     if (placed.length >= MAX_PLACED) return;
-    const i = placed.length;
-    placed.push({ x, y, z, c: color });
-    m.identity().setPosition(x, y, z);
-    placedMesh.setMatrixAt(i, m);
-    tmpColor.setHex(color);
-    placedMesh.setColorAt(i, tmpColor);
-    placedMesh.count = placed.length;
-    placedMesh.instanceMatrix.needsUpdate = true;
-    if (placedMesh.instanceColor) placedMesh.instanceColor.needsUpdate = true;
+    const b = { x, y, z, c: color, s: shape };
+    placed.push(b);
+    writeInstance(b);
+    flushShapes();
     const key = `${x},${z}`;
     colTop.set(key, Math.max(colTop.get(key) ?? -Infinity, y));
   }
@@ -764,10 +794,11 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   return {
     touch,
     setColor(hex: number) { placeColor = hex; },
+    setShape(s: Shape) { placeShape = s; },
     place() {
       if (riding) return;
       const c = targetCell();
-      addBlock(c.x, c.y, c.z, placeColor);
+      addBlock(c.x, c.y, c.z, placeColor, placeShape);
       sfx.place();
       bump("blocksPlaced");
     },
@@ -812,12 +843,18 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     },
     getStats(): GameStats { return { ...stats } },
     getStars() { return collected; },
-    exportBlocks(): SavedBlock[] { return placed.map((p) => ({ x: p.x, y: p.y, z: p.z, c: p.c })); },
+    exportBlocks(): SavedBlock[] {
+      return placed.map((p) => ({ x: p.x, y: p.y, z: p.z, c: p.c, s: p.s }));
+    },
     loadBlocks(blocks: SavedBlock[]) {
       for (const b of blocks) {
         if (placed.length >= MAX_PLACED) break;
-        addBlock(Math.round(b.x), Math.round(b.y), Math.round(b.z), b.c);
+        const s: Shape = b.s && b.s in shapeMeshes ? b.s : "kubus";
+        placed.push({ x: Math.round(b.x), y: Math.round(b.y), z: Math.round(b.z), c: b.c, s });
+        const key = `${Math.round(b.x)},${Math.round(b.z)}`;
+        colTop.set(key, Math.max(colTop.get(key) ?? -Infinity, Math.round(b.y)));
       }
+      rebuildPlaced(); // sekali di akhir, jauh lebih cepat daripada per blok
     },
     // Pulihkan satwa jinak dari simpanan: jinakkan n ekor pertama.
     setTamedCount(n: number) {
