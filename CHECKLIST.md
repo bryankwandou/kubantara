@@ -1,28 +1,35 @@
 # Kubantara — Checklist Induk Pengembangan
 
-## Sisa pekerjaan, urut dampak ke anak (per 2026-07-21)
+## Sisa pekerjaan, urut dampak ke anak (per 2026-07-23)
 
 **Menghalangi anak main hari ini**
 1. Akun 12 anak belum dibuat — jalankan `node scripts/buat-akun-anak.mjs`.
-2. Belum pernah dimainkan manusia di HP sungguhan.
+   (Anak main di WEBSITE lewat laptop; HP sedang diservis.)
 
-**Terasa cepat kalau kurang**
-3. Peralatan (8 item) masih hiasan — belum mengubah gameplay sama sekali.
-4. Tidak ada pengaturan volume; musik hanya bisa nyala/mati.
-5. Mouse look masih perlu menahan seret; belum ada kunci-pointer gaya FPS.
+**Sudah beres & diverifikasi di browser (Chromium sungguhan)**
+- [x] Peralatan berefek nyata: Tongkat Bunga → 29 bunga/sihir di lv20 (vs ~10),
+      Palu Batu → Bongkar meruntuhkan area 3x3x3, Tongkat Pelangi → jembatan
+      +6, Sepatu Angin → lari lebih kencang, Peluit Emas → tunggangan datang
+      sendiri, Mahkota → mahkota emas di kepala.
+- [x] Pengaturan volume musik & efek suara (slider, tersimpan di perangkat).
+- [x] Mouse look bebas gaya FPS (pointer lock) + seret + scroll zoom.
+- [x] Mulai main saat Pagi (dulu selalu Malam); pencapaian malam tak lagi gratis.
+- [x] HUD tak tumpang tindih di layar laptop 1366x768; tombol Profil bisa diklik.
+- [x] Layar penuh, sambutan pemain baru.
 
-**Membuat dunia terasa lebih hidup**
-6. Gua & terowongan (butuh tabrakan volumetrik — perombakan mesin fisika).
-7. Danau besar, hutan lebat, teleport antar-titik.
-8. Musik berubah mengikuti waktu & biome; suara langkah per permukaan.
-9. Kandang, memberi makan, kostum peliharaan; tunggangan terbang/berenang.
+**Membuat dunia terasa lebih hidup (belum)**
+2. Gua & terowongan (butuh tabrakan volumetrik — perombakan mesin fisika).
+3. Danau besar, hutan lebat, teleport antar-titik.
+4. Musik berubah mengikuti waktu & biome; suara langkah per permukaan.
+5. Kandang, memberi makan, kostum peliharaan; tunggangan terbang/berenang.
 
-**Kenyamanan jangka panjang**
-10. Login Google (butuh Client ID & Secret dari Google Cloud milik user).
-11. Reset kata sandi lewat email; hapus akun sendiri.
-12. Rate limiting di endpoint daftar/masuk.
-13. Beberapa slot dunia per akun; ekspor/impor dunia.
-14. Ringkasan mingguan & notifikasi untuk orang tua.
+**Kenyamanan jangka panjang (belum)**
+6. Login Google (butuh Client ID & Secret dari Google Cloud milik user).
+7. Reset kata sandi lewat email; hapus akun sendiri.
+8. Rate limiting di endpoint daftar/masuk.
+9. Beberapa slot dunia per akun; ekspor/impor dunia.
+10. Ringkasan mingguan & notifikasi untuk orang tua.
+11. Belum pernah dimainkan manusia sungguhan (uji selama ini otomatis via Chromium).
 
 
 Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diuji di produksi.
