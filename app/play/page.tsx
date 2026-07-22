@@ -104,6 +104,17 @@ export default function PlayPage() {
     setShowTutor(false);
     try { localStorage.setItem("kubantara_tutor_v1", "1"); } catch {}
   }, []);
+
+  const [isFull, setIsFull] = useState(false);
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+    else document.exitFullscreen?.().catch(() => {});
+  }, []);
+  useEffect(() => {
+    const on = () => setIsFull(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
   const questsDoneRef = useRef<Set<string>>(new Set());
   const lastSaveRef = useRef<number>(Date.now());
   const sejakRef = useRef<number>(0); // penanda balok saudara terakhir yang diterima
@@ -372,6 +383,13 @@ export default function PlayPage() {
           className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-violet-700 shadow sm:px-3 sm:py-2 sm:text-sm"
         >
           {musicOn ? "🎵" : "🔇"}
+        </button>
+        <button
+          onClick={toggleFullscreen}
+          title="Layar penuh"
+          className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-slate-700 shadow sm:px-3 sm:py-2 sm:text-sm"
+        >
+          {isFull ? "🗗" : "⛶"}
         </button>
         {profile ? (
           <>
