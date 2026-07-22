@@ -51,3 +51,7 @@ uji-hasil/
 uji-kamera.mjs
 uji-browser.mjs
 uji-perbaikan.mjs
+uji-fitur.mjs
+uji-palu.mjs
+uji-bunga.mjs
+wait-and-test.sh

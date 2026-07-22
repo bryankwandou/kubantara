@@ -1,6 +1,7 @@
 // Suara ceria yang dibangkitkan langsung di peramban lewat Web Audio.
 // Tidak memakai satu pun berkas audio dari luar.
 let ctx: AudioContext | null = null;
+let sfxVol = 1; // 0..1, diatur pemain di menu pengaturan
 
 function ac(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -13,14 +14,14 @@ function ac(): AudioContext | null {
 
 function tone(freq: number, dur: number, type: OscillatorType, gain = 0.12, slideTo?: number) {
   const a = ac();
-  if (!a) return;
+  if (!a || sfxVol <= 0) return;
   if (a.state === "suspended") a.resume();
   const osc = a.createOscillator();
   const g = a.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, a.currentTime);
   if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, a.currentTime + dur);
-  g.gain.setValueAtTime(gain, a.currentTime);
+  g.gain.setValueAtTime(gain * sfxVol, a.currentTime);
   g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
   osc.connect(g).connect(a.destination);
   osc.start();
@@ -28,6 +29,8 @@ function tone(freq: number, dur: number, type: OscillatorType, gain = 0.12, slid
 }
 
 export const sfx = {
+  setVolume(v: number) { sfxVol = Math.max(0, Math.min(1, v)); },
+  getVolume() { return sfxVol; },
   resume() {
     const a = ac();
     if (a && a.state === "suspended") a.resume();

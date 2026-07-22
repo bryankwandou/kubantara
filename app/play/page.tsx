@@ -5,10 +5,14 @@ import Link from "next/link";
 import { createGame, PALETTE, SHAPES, EMOTES, type Spell, type GameStats, type Perks, type Blueprint, type Shape } from "@/lib/voxel-game";
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
 import { music } from "@/lib/music";
+import { sfx } from "@/lib/sound";
 
 // Perk aktif berdasarkan level akun — keahlian benar-benar terasa di gameplay.
+// Peralatan (gear) terbuka pada level yang sama seperti di lib/content.ts,
+// jadi efeknya dipetakan di sini pula agar janji tiap alat benar-benar nyata.
 function perksForLevel(level: number): Partial<Perks> {
   const p: Partial<Perks> = {};
+  // — keahlian —
   if (level >= 1) p.speedMul = 1.1;
   if (level >= 2) p.jumpMul = 1.2;
   if (level >= 3) p.reach = 2.6;
@@ -16,6 +20,13 @@ function perksForLevel(level: number): Partial<Perks> {
   if (level >= 6) { p.camExtra = 3; p.speedMul = 1.265; }
   if (level >= 7) p.waterWalk = true;
   if (level >= 8) p.nightGlow = true;
+  // — peralatan —
+  if (level >= 2) p.bungaBonus = 0.8;   // Tongkat Bunga: lingkaran bunga lebih lebar
+  if (level >= 3) p.removeRange = 1;    // Palu Batu: Bongkar meruntuhkan area 3x3x3
+  if (level >= 5) p.bridgeBonus = 6;    // Tongkat Pelangi: jembatan lebih panjang
+  if (level >= 6) p.speedMul = 1.35;    // Sepatu Angin: lari lebih kencang lagi
+  if (level >= 8) p.callMount = true;   // Peluit Emas: tunggangan datang sendiri
+  if (level >= 15) p.crown = true;      // Mahkota Kubantara: mahkota di kepala
   return p;
 }
 
@@ -103,6 +114,28 @@ export default function PlayPage() {
   const selesaiTutor = useCallback(() => {
     setShowTutor(false);
     try { localStorage.setItem("kubantara_tutor_v1", "1"); } catch {}
+  }, []);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [musicVol, setMusicVol] = useState(0.5);
+  const [sfxVol, setSfxVol] = useState(1);
+
+  // muat preferensi volume tersimpan
+  useEffect(() => {
+    try {
+      const mv = Number(localStorage.getItem("kubantara_music_vol"));
+      const sv = Number(localStorage.getItem("kubantara_sfx_vol"));
+      if (isFinite(mv) && localStorage.getItem("kubantara_music_vol") !== null) { setMusicVol(mv); music.setVolume(mv); }
+      if (isFinite(sv) && localStorage.getItem("kubantara_sfx_vol") !== null) { setSfxVol(sv); sfx.setVolume(sv); }
+    } catch {}
+  }, []);
+
+  const [freeLook, setFreeLook] = useState(false);
+  // sinkronkan indikator tombol saat pemain menekan Esc untuk melepas kunci
+  useEffect(() => {
+    const on = () => setFreeLook(!!document.pointerLockElement);
+    document.addEventListener("pointerlockchange", on);
+    return () => document.removeEventListener("pointerlockchange", on);
   }, []);
 
   const [isFull, setIsFull] = useState(false);
@@ -391,6 +424,22 @@ export default function PlayPage() {
         >
           {isFull ? "🗗" : "⛶"}
         </button>
+        <button
+          onClick={() => setFreeLook(gameRef.current?.toggleFreeLook() ?? false)}
+          title="Lihat bebas dengan mouse"
+          className={`pointer-events-auto rounded-xl px-2.5 py-1.5 text-xs font-bold shadow sm:px-3 sm:py-2 sm:text-sm ${
+            freeLook ? "bg-emerald-500 text-white" : "bg-white/85 text-slate-700"
+          }`}
+        >
+          🖱️
+        </button>
+        <button
+          onClick={() => setShowSettings((v) => !v)}
+          title="Pengaturan"
+          className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-slate-700 shadow sm:px-3 sm:py-2 sm:text-sm"
+        >
+          ⚙️
+        </button>
         {profile ? (
           <>
             <button
@@ -632,6 +681,40 @@ export default function PlayPage() {
       {toast && (
         <div className="pointer-events-none absolute bottom-64 left-1/2 max-w-[86vw] -translate-x-1/2 rounded-2xl bg-slate-900/90 px-5 py-3 text-center text-sm font-bold text-amber-300 shadow-xl">
           {toast}
+        </div>
+      )}
+
+      {/* Panel pengaturan: volume musik & efek suara */}
+      {showSettings && (
+        <div className="absolute right-3 top-16 z-30 w-64 rounded-2xl bg-white/95 p-4 shadow-xl">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-black text-slate-800">Pengaturan suara</p>
+            <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+          </div>
+          <label className="block text-xs font-bold text-slate-600">
+            🎵 Musik: {Math.round(musicVol * 100)}%
+            <input
+              type="range" min={0} max={1} step={0.05} value={musicVol}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setMusicVol(v); music.setVolume(v);
+                try { localStorage.setItem("kubantara_music_vol", String(v)); } catch {}
+              }}
+              className="mt-1 w-full accent-violet-500"
+            />
+          </label>
+          <label className="mt-3 block text-xs font-bold text-slate-600">
+            🔔 Efek suara: {Math.round(sfxVol * 100)}%
+            <input
+              type="range" min={0} max={1} step={0.05} value={sfxVol}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setSfxVol(v); sfx.setVolume(v); sfx.jump();
+                try { localStorage.setItem("kubantara_sfx_vol", String(v)); } catch {}
+              }}
+              className="mt-1 w-full accent-emerald-500"
+            />
+          </label>
         </div>
       )}
 

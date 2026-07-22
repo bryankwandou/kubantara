@@ -32,15 +32,22 @@ function note(freq: number, dur: number, gain: number, type: OscillatorType, del
   osc.stop(t + dur + 0.05);
 }
 
+let musicVol = 0.5; // 0..1, diatur pemain
+
 export const music = {
   playing: false,
+  setVolume(v: number) {
+    musicVol = Math.max(0, Math.min(1, v));
+    if (master) master.gain.value = musicVol;
+  },
+  getVolume() { return musicVol; },
   start() {
     const a = ac();
     if (!a || this.playing) return;
     if (a.state === "suspended") a.resume();
     if (!master) {
       master = a.createGain();
-      master.gain.value = 0.5;
+      master.gain.value = musicVol;
       const lp = a.createBiquadFilter();
       lp.type = "lowpass";
       lp.frequency.value = 1800;

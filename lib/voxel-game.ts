@@ -91,6 +91,12 @@ export interface Perks {
   camExtra: number;   // tambahan jarak kamera
   waterWalk: boolean; // melaju cepat saat berada di perairan dangkal
   nightGlow: boolean; // sekeliling pemain bersinar saat malam
+  // efek peralatan (gear) — tiap janji di deskripsi jadi nyata di gameplay
+  bungaBonus: number;  // Tongkat Bunga: lingkaran bunga lebih lebar
+  bridgeBonus: number; // Tongkat Pelangi: jembatan lebih panjang
+  removeRange: number;  // Palu Batu: sekali Bongkar meruntuhkan area
+  callMount: boolean;  // Peluit Emas: tunggangan datang sendiri saat dipanggil
+  crown: boolean;      // Mahkota Kubantara: mahkota emas di kepala
 }
 
 // `s` menyusul setelah rilis pertama; simpanan lama tanpa `s` dianggap kubus.
@@ -278,6 +284,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const perks: Perks = {
     speedMul: 1, jumpMul: 1, reach: 1.6, spellScale: 1, camExtra: 0,
     waterWalk: false, nightGlow: false,
+    bungaBonus: 0, bridgeBonus: 0, removeRange: 0, callMount: false, crown: false,
   };
   const bump = (k: keyof GameStats, n = 1) => {
     stats[k] += n;
@@ -575,16 +582,19 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     if (spell === "kembang-api") {
       burst(new THREE.Vector3(p.x, p.y + 4, p.z), rainbow[Math.floor(Math.random() * 6)], Math.round(40 * sc));
     } else if (spell === "bunga") {
-      const n = Math.round(10 * sc);
+      // Tongkat Bunga memperlebar lingkaran & menambah jumlah bunga
+      const bunga = sc * (1 + perks.bungaBonus);
+      const n = Math.round(10 * bunga);
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2;
-        const x = Math.round(p.x + Math.cos(a) * 2 * sc);
-        const z = Math.round(p.z + Math.sin(a) * 2 * sc);
+        const x = Math.round(p.x + Math.cos(a) * 2 * bunga);
+        const z = Math.round(p.z + Math.sin(a) * 2 * bunga);
         addBlock(x, Math.round(groundAt(x, z) + 0.5), z, rainbow[i % 6]);
       }
       burst(p.clone().setY(p.y + 1), 0xff8fd0, 20);
     } else if (spell === "jembatan") {
-      for (let i = 1; i <= Math.round(8 * sc); i++) {
+      // Tongkat Pelangi menambah panjang jembatan
+      for (let i = 1; i <= Math.round(8 * sc) + perks.bridgeBonus; i++) {
         const x = Math.round(p.x + Math.sin(yaw) * i);
         const z = Math.round(p.z + Math.cos(yaw) * i);
         addBlock(x, Math.round(WATER_LEVEL + 1), z, rainbow[i % 6]);
@@ -617,12 +627,20 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   let camZoom = 1;          // pengali jarak kamera dari scroll
   // seret mouse untuk memutar pandangan, seperti Minecraft/Roblox
   let dragging = false, lastMx = 0, lastMy = 0;
+  let crown: THREE.Mesh | null = null; // mahkota di kepala (Mahkota Kubantara)
   const onDown = (e: PointerEvent) => {
     // hanya area kanvas kosong; tombol HUD menangani kliknya sendiri
     if (e.button !== 0) return;
     dragging = true; lastMx = e.clientX; lastMy = e.clientY;
   };
   const onMove = (e: PointerEvent) => {
+    // Saat pointer terkunci, mouse memutar kamera bebas tanpa perlu menahan
+    // klik — gaya Minecraft/Roblox. Pakai movementX/Y, bukan posisi absolut.
+    if (pointerLocked) {
+      camYaw -= e.movementX * 0.004;
+      camPitch = Math.max(0.05, Math.min(1.35, camPitch + e.movementY * 0.004));
+      return;
+    }
     if (!dragging) return;
     camYaw -= (e.clientX - lastMx) * 0.005;
     camPitch = Math.max(0.05, Math.min(1.35, camPitch + (e.clientY - lastMy) * 0.005));
@@ -633,6 +651,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     e.preventDefault();
     camZoom = Math.max(0.6, Math.min(2.2, camZoom + (e.deltaY > 0 ? 0.12 : -0.12)));
   };
+  let pointerLocked = false;
+  const onLockChange = () => { pointerLocked = document.pointerLockElement === canvas; };
+  document.addEventListener("pointerlockchange", onLockChange);
   canvas.addEventListener("pointerdown", onDown);
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
@@ -923,7 +944,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     },
     removeBlock() {
       if (!placed.length) return;
-      // buang blok pasang terdekat dari pemain
+      // cari blok pasang terdekat dari pemain
       let bi = -1, bd = 16;
       for (let i = 0; i < placed.length; i++) {
         const dx = placed[i].x - player.position.x;
@@ -933,21 +954,41 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         if (dd < bd) { bd = dd; bi = i; }
       }
       if (bi < 0) return;
-      const rem = placed.splice(bi, 1)[0];
-      cellKeys.delete(cellKey(rem.x, rem.y, rem.z));
-      // hitung ulang puncak kolom
-      const key = `${rem.x},${rem.z}`;
-      let top = -Infinity;
-      for (const p of placed) if (p.x === rem.x && p.z === rem.z) top = Math.max(top, p.y);
-      if (top === -Infinity) colTop.delete(key); else colTop.set(key, top);
+      const pusat = placed[bi];
+      // Palu Batu: runtuhkan semua blok dalam radius sekaligus. Tanpa gear,
+      // radius 0 = hanya satu blok seperti biasa.
+      const r = perks.removeRange;
+      const buang = r > 0
+        ? placed.filter((b) =>
+            Math.abs(b.x - pusat.x) <= r && Math.abs(b.y - pusat.y) <= r && Math.abs(b.z - pusat.z) <= r)
+        : [pusat];
+      const kolom = new Set<string>();
+      for (const rem of buang) {
+        const idx = placed.indexOf(rem);
+        if (idx < 0) continue;
+        placed.splice(idx, 1);
+        cellKeys.delete(cellKey(rem.x, rem.y, rem.z));
+        kolom.add(`${rem.x},${rem.z}`);
+      }
+      // hitung ulang puncak tiap kolom yang tersentuh
+      for (const key of kolom) {
+        const [kx, kz] = key.split(",").map(Number);
+        let top = -Infinity;
+        for (const p of placed) if (p.x === kx && p.z === kz) top = Math.max(top, p.y);
+        if (top === -Infinity) colTop.delete(key); else colTop.set(key, top);
+      }
       rebuildPlaced();
       sfx.breakBlock();
-      bump("blocksRemoved");
+      bump("blocksRemoved", buang.length);
     },
     cast(spell: Spell) { castSpell(spell); },
     toggleRide() {
       if (!riding) {
-        // hanya bisa naik bila dekat tunggangan
+        // Peluit Emas: tunggangan datang sendiri ke sisi pemain dari mana pun
+        if (perks.callMount && mount.g.position.distanceTo(player.position) > 4) {
+          mount.g.position.set(player.position.x + 1.5, groundAt(player.position.x + 1.5, player.position.z), player.position.z);
+        }
+        // tanpa peluit, hanya bisa naik bila sudah dekat
         if (mount.g.position.distanceTo(player.position) > 4) return false;
       }
       riding = !riding;
@@ -1119,7 +1160,26 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       if (made > 0) { bump("blocksPlaced", made); sfx.place(); }
       return made;
     },
-    setPerks(next: Partial<Perks>) { Object.assign(perks, next); },
+    // Mouse look bebas: kunci pointer ke kanvas. Klik lagi / Esc melepasnya.
+    toggleFreeLook() {
+      if (document.pointerLockElement === canvas) { document.exitPointerLock(); return false; }
+      canvas.requestPointerLock?.();
+      return true;
+    },
+    isFreeLook() { return pointerLocked; },
+    setPerks(next: Partial<Perks>) {
+      Object.assign(perks, next);
+      // Mahkota Kubantara muncul di kepala begitu perknya aktif
+      if (perks.crown && !crown) {
+        crown = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.3, 0.34, 0.22, 6),
+          new THREE.MeshLambertMaterial({ color: 0xffd23e, emissive: 0x6a5000 })
+        );
+        crown.position.y = 1.95;
+        crown.castShadow = true;
+        player.add(crown);
+      }
+    },
     setHero(shirtHex: number, pantsHex: number) {
       kid.shirt.color.setHex(shirtHex);
       kid.pants.color.setHex(pantsHex);
@@ -1133,6 +1193,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("wheel", onWheel);
+      document.removeEventListener("pointerlockchange", onLockChange);
+      if (document.pointerLockElement === canvas) document.exitPointerLock?.();
       renderer.dispose();
     },
   };
