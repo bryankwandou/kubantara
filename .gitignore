@@ -48,3 +48,6 @@ next-env.d.ts
 
 # hasil tangkapan layar uji
 uji-hasil/
+uji-kamera.mjs
+uji-browser.mjs
+uji-perbaikan.mjs
