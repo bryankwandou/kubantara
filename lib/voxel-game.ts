@@ -612,6 +612,31 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const touch = { x: 0, y: 0, jump: false };
 
   let vy = 0, yaw = 0, camYaw = 0, walk = 0, distAcc = 0;
+  // sudut naik-turun kamera & zoom, dikendalikan mouse (anak main di laptop)
+  let camPitch = 0.62;      // 0 = datar, ~1.4 = dari atas
+  let camZoom = 1;          // pengali jarak kamera dari scroll
+  // seret mouse untuk memutar pandangan, seperti Minecraft/Roblox
+  let dragging = false, lastMx = 0, lastMy = 0;
+  const onDown = (e: PointerEvent) => {
+    // hanya area kanvas kosong; tombol HUD menangani kliknya sendiri
+    if (e.button !== 0) return;
+    dragging = true; lastMx = e.clientX; lastMy = e.clientY;
+  };
+  const onMove = (e: PointerEvent) => {
+    if (!dragging) return;
+    camYaw -= (e.clientX - lastMx) * 0.005;
+    camPitch = Math.max(0.05, Math.min(1.35, camPitch + (e.clientY - lastMy) * 0.005));
+    lastMx = e.clientX; lastMy = e.clientY;
+  };
+  const onUp = () => { dragging = false; };
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    camZoom = Math.max(0.6, Math.min(2.2, camZoom + (e.deltaY > 0 ? 0.12 : -0.12)));
+  };
+  canvas.addEventListener("pointerdown", onDown);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  canvas.addEventListener("wheel", onWheel, { passive: false });
   const clock = new THREE.Clock();
   let gameTime = 0;
 
@@ -774,12 +799,16 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     (ghost.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(t * 4) * 0.1;
 
     // ----- kamera -----
+    // keyboard Q/E tetap ada untuk yang tanpa mouse; mouse mengatur yaw & pitch
     if (keys.KeyQ) camYaw += dt * 2;
     if (keys.KeyE) camYaw -= dt * 2;
-    const camDist = (riding ? 12 : 9) + perks.camExtra;
-    const cx = player.position.x - Math.sin(camYaw) * camDist;
-    const cz = player.position.z - Math.cos(camYaw) * camDist;
-    camera.position.lerp(new THREE.Vector3(cx, player.position.y + (riding ? 8 : 6), cz), 0.08);
+    const camDist = ((riding ? 12 : 9) + perks.camExtra) * camZoom;
+    // pitch menentukan seberapa tinggi kamera mengambang vs seberapa jauh mundur
+    const horiz = Math.cos(camPitch) * camDist;
+    const vert = Math.sin(camPitch) * camDist;
+    const cx = player.position.x - Math.sin(camYaw) * horiz;
+    const cz = player.position.z - Math.cos(camYaw) * horiz;
+    camera.position.lerp(new THREE.Vector3(cx, player.position.y + 1.5 + vert, cz), 0.12);
     camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
 
     // ----- bintang -----
@@ -1100,6 +1129,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
       window.removeEventListener("resize", resize);
+      canvas.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("wheel", onWheel);
       renderer.dispose();
     },
   };

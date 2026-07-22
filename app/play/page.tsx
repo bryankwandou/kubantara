@@ -37,7 +37,7 @@ const TUTOR = [
   {
     emoji: "🕹️",
     judul: "Cara berjalan",
-    isi: "Di HP: geser bulatan di kiri bawah untuk jalan, tekan LOMPAT di kanan bawah. Di laptop: tombol W A S D untuk jalan, spasi untuk lompat, Q dan E untuk memutar kamera.",
+    isi: "Di laptop: tombol W A S D untuk jalan, spasi untuk lompat, dan seret mouse untuk melihat sekeliling (scroll untuk memperbesar). Di HP: geser bulatan di kiri bawah, tekan LOMPAT di kanan bawah.",
   },
   {
     emoji: "🧱",
@@ -401,7 +401,7 @@ export default function PlayPage() {
       </div>
 
       <div className="pointer-events-none absolute right-3 top-3 hidden max-w-[220px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
-        WASD jalan · Spasi lompat · Q/E putar kamera. Pilih warna lalu tekan Bangun untuk menaruh balok di depanmu.
+        WASD jalan · Spasi lompat · seret mouse untuk melihat sekeliling · scroll untuk zoom. Pilih warna lalu tekan Bangun untuk menaruh balok di depanmu.
       </div>
 
       {/* Panel pilih pahlawan */}
