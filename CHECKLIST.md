@@ -9,7 +9,7 @@
 **Terasa cepat kalau kurang**
 3. Peralatan (8 item) masih hiasan — belum mengubah gameplay sama sekali.
 4. Tidak ada pengaturan volume; musik hanya bisa nyala/mati.
-5. Tidak ada mode layar penuh atau kunci orientasi lanskap.
+5. Mouse look masih perlu menahan seret; belum ada kunci-pointer gaya FPS.
 
 **Membuat dunia terasa lebih hidup**
 6. Gua & terowongan (butuh tabrakan volumetrik — perombakan mesin fisika).
@@ -108,8 +108,13 @@ Checklist hidup yang menemani PLAN-100-HARI.md. Item dicentang hanya setelah diu
 - [x] Cetakan bangunan & bentuk balok masuk laci — **dulu menimpa joystick
       di HP portrait sehingga anak tidak bisa berjalan sama sekali**
 - [x] Panel misi/pahlawan dibatasi tingginya + bisa digulir
+- [x] **Kamera mouse: seret untuk melihat sekeliling, scroll untuk zoom.**
+      Wajib untuk main di laptop — dulu kamera hanya bisa diputar tombol Q/E,
+      anak yang terbiasa Roblox/Minecraft pasti bingung. Diuji di Chromium
+      sungguhan: seret memutar yaw & pitch, tombol HUD tetap bisa diklik.
+- [x] Mode layar penuh (tombol ⛶ di bar atas)
 - [ ] Pengaturan: volume, sensitivitas kamera
-- [ ] Mode layar penuh
+- [ ] Kunci pointer (mouse look tanpa harus menahan seret)
 - [ ] Kunci orientasi lanskap di HP
 
 ## F. Kualitas & Operasional
