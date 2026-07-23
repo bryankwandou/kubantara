@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { sql, ensureSchema } from "@/lib/db";
 import { currentUser } from "@/lib/auth";
 import { levelFromXp } from "@/lib/content";
@@ -60,6 +61,20 @@ export async function PUT(req: Request) {
   const childId = Math.floor(Number(body?.childId));
   if (!Number.isFinite(childId) || childId <= 0)
     return NextResponse.json({ error: "Anak tidak dikenali" }, { status: 400 });
+
+  // Reset sandi anak: anak tak punya email, jadi orang tua yang memulihkan.
+  // Sekaligus buka kunci jika akun sempat terkunci karena salah berkali-kali.
+  if (body?.newPassword !== undefined) {
+    const pw = String(body.newPassword ?? "");
+    if (pw.length < 4)
+      return NextResponse.json({ error: "Sandi baru minimal 4 karakter" }, { status: 400 });
+    const hash = await bcrypt.hash(pw, 10);
+    const done = await sql`
+      UPDATE users SET password_hash = ${hash}, failed_attempts = 0, lock_until = NULL
+      WHERE id = ${childId} AND role = 'anak' RETURNING id`;
+    if (!done.length) return NextResponse.json({ error: "Anak tidak ditemukan" }, { status: 404 });
+    return NextResponse.json({ ok: true, reset: true });
+  }
 
   // batasi hanya ke akun anak, supaya panel tak bisa mengubah akun ortu lain
   if (body?.familyCode !== undefined) {

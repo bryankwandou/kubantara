@@ -112,7 +112,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowEnd ? 1.25 : 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = lowEnd ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   // Warna & pencahayaan lebih nyata: ruang warna sRGB + tone mapping sinema
   // membuat cahaya matahari terasa hangat, bukan datar & pucat.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -794,7 +794,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
   canvas.addEventListener("wheel", onWheel, { passive: false });
-  const clock = new THREE.Clock();
+  // penghitung waktu sendiri (THREE.Clock usang di three r185+)
+  let lastTime = performance.now();
   let gameTime = 0;
 
   function resize() {
@@ -825,7 +826,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   let raf = 0;
   function frame() {
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(clock.getDelta(), 0.05);
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
     // Waktu game ditumpuk dari dt yang sudah dibatasi, bukan dari jam dinding.
     // Kalau tidak, di laptop lambat anak bergerak pelan tapi malam tetap
     // datang secepat biasanya — dunia terasa tidak adil.
