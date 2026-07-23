@@ -253,6 +253,39 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         put(layers.leaf, bx + dx, base + 4, bz + dz);
   }
 
+  // ---------- gua & terowongan ----------
+  // Bukit batu berongga: cangkang batu dengan mulut gua menghadap selatan.
+  // Karena tabrakan berbasis peta ketinggian, dinding gua tidak menghalangi
+  // (anak tak akan tersangkut) — pemain berjalan masuk & berdiri di lantai gua,
+  // dengan kristal bercahaya di dalam dan sebuah bintang tersembunyi sebagai hadiah.
+  const CAVE_SPOTS = [
+    { x: -30, z: 22, r: 5 },
+    { x: 28, z: 28, r: 6 },
+    { x: 40, z: -6, r: 5 },
+  ];
+  const crystalPos: THREE.Vector3[] = [];
+  const caveCenters: { x: number; z: number; y: number; r: number }[] = [];
+  for (const cave of CAVE_SPOTS) {
+    const fx = cave.x, fz = cave.z, r = cave.r;
+    const floor = hAt(fx, fz);
+    caveCenters.push({ x: fx, z: fz, y: floor, r });
+    for (let dx = -r; dx <= r; dx++)
+      for (let dz = -r; dz <= r; dz++)
+        for (let dy = 0; dy <= r; dy++) {
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist < r - 0.8 || dist > r + 0.4) continue; // hanya cangkang kubah
+          // mulut gua menghadap -z supaya jalur masuknya jelas
+          if (dz < -r + 1.6 && Math.abs(dx) <= 1 && dy <= 2) continue;
+          put(layers.stone, fx + dx, floor + dy, fz + dz);
+        }
+    // batu pijakan menuju mulut gua (terowongan pendek)
+    for (let i = 1; i <= 3; i++) put(layers.stone, fx, floor, fz - r - i);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      crystalPos.push(new THREE.Vector3(fx + Math.cos(a) * (r - 2.5), floor + 0.9, fz + Math.sin(a) * (r - 2.5)));
+    }
+  }
+
   for (const key of Object.keys(layers) as Biome[]) {
     const l = layers[key];
     const mesh = new THREE.InstancedMesh(
@@ -305,6 +338,23 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     cloudGroup.add(puff);
   }
   scene.add(cloudGroup);
+
+  // ---------- kristal gua yang bercahaya ----------
+  const crystalGeo = new THREE.OctahedronGeometry(0.42);
+  const crystalHues = [0x7ee6ff, 0xff6bd6, 0xb0ff7e];
+  const crystals = crystalPos.map((p, i) => {
+    const hue = crystalHues[i % crystalHues.length];
+    const mesh = new THREE.Mesh(
+      crystalGeo,
+      new THREE.MeshStandardMaterial({ color: hue, emissive: hue, emissiveIntensity: 0.9, roughness: 0.25, metalness: 0.1 })
+    );
+    mesh.position.copy(p);
+    scene.add(mesh);
+    return { mesh, baseY: p.y };
+  });
+  // lentera hangat yang menyala hanya saat pemain berada di dalam gua
+  const caveGlow = new THREE.PointLight(0x9fe8ff, 0, 18, 2);
+  scene.add(caveGlow);
 
   // ---------- blok yang dipasang pemain (dinamis) ----------
   // Satu InstancedMesh per bentuk; semuanya memakai warna per-instance.
@@ -608,7 +658,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const starMat = new THREE.MeshLambertMaterial({ color: 0xffd23e, emissive: 0x8a6000 });
   const stars: THREE.Mesh[] = [];
   let seed = 7, placedStars = 0;
-  while (placedStars < 24) {
+  // sebagian bintang disembunyikan di dalam gua sebagai hadiah menjelajah,
+  // sehingga totalnya tetap 24 seperti yang dijanjikan di sambutan.
+  const surfaceStars = 24 - caveCenters.length;
+  while (placedStars < surfaceStars) {
     seed++;
     const x = Math.floor((hash(seed, 11) - 0.5) * (WORLD - 12));
     const z = Math.floor((hash(seed, 23) - 0.5) * (WORLD - 12));
@@ -619,6 +672,14 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     s.userData.baseY = h + 1.2;
     s.userData.phase = Math.random() * Math.PI * 2;
     stars.push(s); scene.add(s); placedStars++;
+  }
+  // bintang hadiah di dalam tiap gua
+  for (const c of caveCenters) {
+    const s = new THREE.Mesh(starGeo, starMat);
+    s.position.set(c.x, c.y + 1.4, c.z);
+    s.userData.baseY = c.y + 1.4;
+    s.userData.phase = Math.random() * Math.PI * 2;
+    stars.push(s); scene.add(s);
   }
   let collected = 0;
   hooks.onStars(0, stars.length);
@@ -786,6 +847,24 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     // lentera hanya menyala saat gelap, dan hanya jika keahliannya terbuka
     glow.intensity = perks.nightGlow ? (1 - daylight) * 2.4 : 0;
     glow.position.copy(player.position).add(new THREE.Vector3(0, 2, 0));
+
+    // ----- di dalam gua: gelap & lembap, hanya kristal & lentera yang menerangi -----
+    let insideCave = false;
+    for (const c of caveCenters) {
+      const dx = player.position.x - c.x, dz = player.position.z - c.z;
+      if (dx * dx + dz * dz < (c.r - 0.4) * (c.r - 0.4)) { insideCave = true; break; }
+    }
+    if (insideCave) {
+      sun.intensity *= 0.28;
+      ambient.intensity *= 0.35;
+      caveGlow.intensity = 2.4;
+      caveGlow.position.copy(player.position).add(new THREE.Vector3(0, 2, 0));
+    } else caveGlow.intensity = 0;
+    for (const c of crystals) {
+      c.mesh.rotation.y = t * 1.5;
+      c.mesh.position.y = c.baseY + Math.sin(t * 2 + c.baseY) * 0.12;
+      c.mesh.scale.setScalar(1 + Math.sin(t * 4 + c.baseY) * 0.12);
+    }
     const sky = skyNight.clone();
     if (daylight > 0.5) sky.lerpColors(skyDusk, skyDay, (daylight - 0.5) * 2);
     else sky.lerpColors(skyNight, skyDusk, daylight * 2);
@@ -1329,12 +1408,16 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         { id: "desa", label: "🏘️ Desa" },
         { id: "hutan", label: "🌲 Hutan Lebat" },
         { id: "danau", label: "🏞️ Tepi Danau" },
+        { id: "gua", label: "🕳️ Mulut Gua" },
         { id: "salju", label: "🏔️ Puncak Salju" },
       ];
     },
     teleport(id: string) {
       const spots: Record<string, [number, number]> = {
-        rumah: [0, 0], desa: [4, -6], hutan: [-34, -34], danau: [0, 0], salju: [0, 0],
+        rumah: [0, 0], desa: [4, -6], hutan: [-34, -34],
+        // tepat di depan mulut gua pertama (menghadap -z), siap dimasuki
+        gua: [caveCenters[0] ? caveCenters[0].x : -30, caveCenters[0] ? caveCenters[0].z - caveCenters[0].r - 2 : 15],
+        danau: [0, 0], salju: [0, 0],
       };
       // danau & salju dicari dinamis: titik air terendah / dataran tertinggi
       if (id === "danau" || id === "salju") {
