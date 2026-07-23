@@ -368,7 +368,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     const legL = mk(0.24, 0.6, 0.24, pants, -0.16, 0.3, 0);
     const legR = mk(0.24, 0.6, 0.24, pants, 0.16, 0.3, 0);
     g.add(head, body, armL, armR, legL, legR);
-    return { g, armL, armR, legL, legR, shirt, pants };
+    return { g, head, armL, armR, legL, legR, shirt, pants };
   }
   const kid = buildKid();
   const player = kid.g;
@@ -547,6 +547,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     if (h < WATER_LEVEL + 1) continue;
     const s = new THREE.Mesh(starGeo, starMat);
     s.position.set(x, h + 1.2, z);
+    s.userData.baseY = h + 1.2;
+    s.userData.phase = Math.random() * Math.PI * 2;
     stars.push(s); scene.add(s); placedStars++;
   }
   let collected = 0;
@@ -622,6 +624,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const touch = { x: 0, y: 0, jump: false };
 
   let vy = 0, yaw = 0, camYaw = 0, walk = 0, distAcc = 0;
+  // keadaan animasi "juice" karakter — memberi rasa hidup
+  let squash = 0;      // >0 = habis mendarat (memampat lalu memantul balik)
+  let wasAirborne = false;
   // sudut naik-turun kamera & zoom, dikendalikan mouse (anak main di laptop)
   let camPitch = 0.62;      // 0 = datar, ~1.4 = dari atas
   let camZoom = 1;          // pengali jarak kamera dari scroll
@@ -761,15 +766,31 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
     const g = groundAt(player.position.x, player.position.z);
     vy -= 22 * dt;
-    if ((keys.Space || touch.jump) && player.position.y <= g + 0.02) {
+    const onGround = player.position.y <= g + 0.02;
+    if ((keys.Space || touch.jump) && onGround) {
       vy = (riding ? 11 : 9) * perks.jumpMul; sfx.jump(); touch.jump = false; bump("jumps");
+      squash = -0.5; // sedikit meregang saat melejit ke atas
     }
     player.position.y += vy * dt;
     if (player.position.y < g) { player.position.y = g; vy = 0; }
+    // mendarat: picu memampat sebanding kecepatan jatuh
+    if (onGround && wasAirborne) squash = Math.min(1, Math.abs(vy) * 0.05 + 0.55);
+    wasAirborne = !onGround;
+    squash *= Math.pow(0.001, dt); // pegas kembali ke normal dengan cepat
 
+    // ayunan kaki & tangan saat berjalan
     const sw = Math.sin(walk) * 0.6 * Math.min(1, len);
     kid.legL.rotation.x = sw; kid.legR.rotation.x = -sw;
     kid.armL.rotation.x = -sw; kid.armR.rotation.x = sw;
+
+    // squash & stretch + napas halus saat diam — karakter terasa bernyawa.
+    // Pivot grup di kaki (y=0), jadi menskala Y membuat kaki tetap menapak.
+    const napas = moving ? 0 : Math.sin(t * 2.2) * 0.02;
+    const sy = 1 - squash * 0.28 + napas;     // memampat = lebih pendek
+    const sxz = 1 + squash * 0.18 - napas * 0.5; // sekaligus melebar
+    player.scale.set(sxz, sy, sxz);
+    // badan sedikit memantul mengikuti langkah
+    kid.head.position.y = 1.55 + Math.abs(Math.sin(walk)) * 0.06 * Math.min(1, len);
 
     // tunggangan mengikuti posisi pemain saat dinaiki
     if (riding) {
@@ -832,14 +853,20 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     camera.position.lerp(new THREE.Vector3(cx, player.position.y + 1.5 + vert, cz), 0.12);
     camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
 
-    // ----- bintang -----
+    // ----- bintang: berputar, mengambang naik-turun & berdenyut memikat -----
     for (const s of stars) {
       if (!s.visible) continue;
       s.rotation.y = t * 2;
+      // mengambang lembut + denyut skala supaya "memanggil" untuk didekati
+      s.position.y = s.userData.baseY + Math.sin(t * 2 + s.userData.phase) * 0.25;
+      const pulse = 1 + Math.sin(t * 4 + s.userData.phase) * 0.12;
+      s.scale.setScalar(pulse);
       if (s.position.distanceTo(player.position) < 1.8) {
         s.visible = false; collected++;
         sfx.star();
-        burst(s.position.clone(), 0xffd23e, 18);
+        // perayaan: ledakan emas besar + percik warna-warni
+        burst(s.position.clone(), 0xffd23e, 34);
+        burst(s.position.clone().add(new THREE.Vector3(0, 0.5, 0)), rainbow[collected % 6], 20);
         hooks.onStars(collected, stars.length);
         if (collected === stars.length) sfx.win();
       }
@@ -939,6 +966,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       addBlock(c.x, c.y, c.z, placeColor, placeShape);
       if (placed.length === before) return; // sel sudah terisi
       outbox.push({ x: c.x, y: c.y, z: c.z, c: placeColor, s: placeShape });
+      // percik kecil sewarna balok — memasang jadi terasa "nendang"
+      burst(new THREE.Vector3(c.x, c.y + 0.3, c.z), placeColor, 8);
       sfx.place();
       bump("blocksPlaced");
     },

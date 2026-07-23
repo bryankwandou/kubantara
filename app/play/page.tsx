@@ -679,7 +679,7 @@ export default function PlayPage() {
 
       {/* Toast pencapaian */}
       {toast && (
-        <div className="pointer-events-none absolute bottom-64 left-1/2 max-w-[86vw] -translate-x-1/2 rounded-2xl bg-slate-900/90 px-5 py-3 text-center text-sm font-bold text-amber-300 shadow-xl">
+        <div key={toast} className="anim-pop pointer-events-none absolute bottom-64 left-1/2 max-w-[86vw] -translate-x-1/2 rounded-2xl bg-slate-900/90 px-5 py-3 text-center text-sm font-bold text-amber-300 shadow-xl">
           {toast}
         </div>
       )}
