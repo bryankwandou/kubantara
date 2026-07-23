@@ -99,6 +99,7 @@ export default function PlayPage() {
   const [shape, setShape] = useState<Shape>("kubus");
   const [teman, setTeman] = useState(0);
   const [showBuild, setShowBuild] = useState(false);
+  const [showPet, setShowPet] = useState(false);
   const [showTutor, setShowTutor] = useState(false);
   const [tutorStep, setTutorStep] = useState(0);
 
@@ -223,7 +224,11 @@ export default function PlayPage() {
         if (statsRef.current) checkAchievements(statsRef.current, got);
         if (got === total) setDone(true);
       },
-      onTime: (label) => setTime(label),
+      onTime: (label) => {
+        setTime(label);
+        // musik ikut suasana: malam & senja jadi tenang, siang & pagi riang
+        music.setMood(label === "Malam" || label === "Senja" ? "night" : "day");
+      },
       onRide: (r) => setRiding(r),
       onStat: (s) => {
         statsRef.current = s;
@@ -432,6 +437,13 @@ export default function PlayPage() {
           }`}
         >
           🖱️
+        </button>
+        <button
+          onClick={() => setShowPet((v) => !v)}
+          title="Peliharaan & jalan pintas"
+          className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-pink-600 shadow sm:px-3 sm:py-2 sm:text-sm"
+        >
+          🐾
         </button>
         <button
           onClick={() => setShowSettings((v) => !v)}
@@ -681,6 +693,46 @@ export default function PlayPage() {
       {toast && (
         <div key={toast} className="anim-pop pointer-events-none absolute bottom-64 left-1/2 max-w-[86vw] -translate-x-1/2 rounded-2xl bg-slate-900/90 px-5 py-3 text-center text-sm font-bold text-amber-300 shadow-xl">
           {toast}
+        </div>
+      )}
+
+      {/* Panel peliharaan & jalan pintas (teleport) */}
+      {showPet && (
+        <div className="absolute right-3 top-16 z-30 w-64 rounded-2xl bg-white/95 p-4 shadow-xl">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-black text-slate-800">🐾 Peliharaan</p>
+            <button onClick={() => setShowPet(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+          </div>
+          <button
+            onClick={() => { gameRef.current?.feedPet(); showToast("Nyam! Peliharaanmu senang ❤️"); }}
+            className="w-full rounded-xl bg-pink-500 py-2.5 text-sm font-black text-white shadow active:scale-95"
+          >
+            🍎 Beri makan
+          </button>
+          <p className="mb-1.5 mt-3 text-xs font-black text-slate-800">Kostum topi</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(gameRef.current?.petCostumes() ?? []).map((c) => (
+              <button
+                key={c.id}
+                onClick={() => { gameRef.current?.setPetCostume(c.id); showToast(`Peliharaanmu memakai ${c.label}`); }}
+                className="rounded-lg bg-slate-100 px-1 py-2 text-xs font-bold text-slate-700 active:scale-95"
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <p className="mb-1.5 mt-3 text-xs font-black text-slate-800">🚀 Jalan pintas</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(gameRef.current?.landmarks() ?? []).map((l) => (
+              <button
+                key={l.id}
+                onClick={() => { gameRef.current?.teleport(l.id); showToast(`Melompat ke ${l.label}`); setShowPet(false); }}
+                className="rounded-lg bg-sky-100 px-1 py-2 text-xs font-bold text-sky-800 active:scale-95"
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

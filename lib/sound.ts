@@ -56,6 +56,21 @@ export const sfx = {
   mount() {
     tone(240, 0.2, "sine", 0.1, 400);
   },
+  // langkah kaki: denyut rendah singkat, nada berganti agar tidak monoton.
+  // dipanggil tiap kaki menyentuh tanah dari loop permainan.
+  step(left: boolean) {
+    tone(left ? 92 : 104, 0.07, "sine", 0.05, left ? 66 : 74);
+  },
+  // memberi makan peliharaan: bunyi "nyam" ceria
+  feed() {
+    tone(300, 0.1, "sine", 0.09, 480);
+    setTimeout(() => tone(440, 0.12, "triangle", 0.08), 90);
+  },
+  // teleport: bunyi berdengung naik lalu berkilau
+  teleport() {
+    tone(220, 0.18, "sine", 0.09, 880);
+    setTimeout(() => tone(1320, 0.16, "triangle", 0.1), 150);
+  },
   win() {
     [523, 659, 784, 1046].forEach((f, i) =>
       setTimeout(() => tone(f, 0.22, "triangle", 0.14), i * 130)

@@ -71,6 +71,10 @@ export function ensureSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )`;
       await sql`CREATE INDEX IF NOT EXISTS family_blocks_feed ON family_blocks (family_code, id)`;
+      // pembatasan percobaan masuk: kunci sementara setelah salah berkali-kali,
+      // supaya kata sandi anak tidak bisa ditebak paksa.
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INT NOT NULL DEFAULT 0`;
+      await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS lock_until TIMESTAMPTZ`;
     })();
   }
   return ready;

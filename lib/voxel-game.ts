@@ -113,6 +113,11 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowEnd ? 1.25 : 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = lowEnd ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+  // Warna & pencahayaan lebih nyata: ruang warna sRGB + tone mapping sinema
+  // membuat cahaya matahari terasa hangat, bukan datar & pucat.
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
 
   const scene = new THREE.Scene();
   const skyDay = new THREE.Color(0x8ecfff);
@@ -196,7 +201,12 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         : layers.grass;
       put(top, x, h, z);
       put(layers.dirt, x, h - 1, z);
-      if (top === layers.grass && hash(x * 3.7, z * 3.7) > 0.986) {
+      // Hutan lebat: di barat laut pulau pepohonan tumbuh jauh lebih rapat.
+      // Nilai forest 0..1 makin tinggi makin ke dalam hutan.
+      const forest = smooth(x / 30 - 200, z / 30 - 200);
+      const inForest = x < -18 && z < -18;
+      const treeChance = inForest ? 0.9 - forest * 0.06 : 0.986;
+      if (top === layers.grass && hash(x * 3.7, z * 3.7) > treeChance) {
         const th = 3 + Math.floor(hash(x, z) * 2);
         for (let y = 1; y <= th; y++) put(layers.wood, x, h + y, z);
         for (let dx = -2; dx <= 2; dx++)
@@ -253,6 +263,48 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     mesh.receiveShadow = true;
     scene.add(mesh);
   }
+
+  // ---------- air: permukaan danau & laut ----------
+  // Bidang biru tembus pandang setinggi permukaan air. Riak halus dari
+  // gelombang vertex membuat danau terasa hidup, bukan sekadar warna datar.
+  const waterGeo = new THREE.PlaneGeometry(WORLD, WORLD, lowEnd ? 24 : 48, lowEnd ? 24 : 48);
+  waterGeo.rotateX(-Math.PI / 2);
+  const waterBaseY = new Float32Array(waterGeo.attributes.position.count);
+  {
+    const p = waterGeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) waterBaseY[i] = p.getY(i);
+  }
+  const water = new THREE.Mesh(
+    waterGeo,
+    new THREE.MeshLambertMaterial({
+      color: 0x2f8fd6, transparent: true, opacity: 0.68,
+      emissive: 0x0a3a66, emissiveIntensity: 0.25,
+    })
+  );
+  water.position.y = WATER_LEVEL + 0.35;
+  water.receiveShadow = true;
+  scene.add(water);
+
+  // ---------- awan yang menghanyut pelan ----------
+  const cloudGroup = new THREE.Group();
+  const cloudMat = new THREE.MeshLambertMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.85, emissive: 0x9fb4cc, emissiveIntensity: 0.15,
+  });
+  for (let i = 0; i < (lowEnd ? 8 : 16); i++) {
+    const puff = new THREE.Group();
+    const n = 3 + Math.floor(hash(i, 71) * 3);
+    for (let j = 0; j < n; j++) {
+      const s = 3 + hash(i * 7, j * 3) * 4;
+      const b = new THREE.Mesh(box, cloudMat);
+      b.scale.set(s, s * 0.55, s);
+      b.position.set((hash(i, j) - 0.5) * 10, (hash(j, i) - 0.5) * 2, (hash(i + j, j) - 0.5) * 8);
+      puff.add(b);
+    }
+    puff.position.set((hash(i, 2) - 0.5) * WORLD, 34 + hash(i, 4) * 12, (hash(i, 8) - 0.5) * WORLD);
+    puff.userData.speed = 0.6 + hash(i, 6) * 0.8;
+    cloudGroup.add(puff);
+  }
+  scene.add(cloudGroup);
 
   // ---------- blok yang dipasang pemain (dinamis) ----------
   // Satu InstancedMesh per bentuk; semuanya memakai warna per-instance.
@@ -417,6 +469,23 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const pet = buildCritter(0xf4a340, 0.5, 0.4, 0.7);
   pet.g.position.set(2, groundAt(2, 0), 1);
   scene.add(pet.g);
+  // rasa kenyang & lonjakan senang saat diberi makan
+  let petHop = 0;
+  // topi kostum peliharaan (disembunyikan sampai anak memilih kostum)
+  const petHat = new THREE.Mesh(
+    new THREE.ConeGeometry(0.28, 0.4, 4),
+    new THREE.MeshLambertMaterial({ color: 0xe2554d })
+  );
+  petHat.position.y = 1.15;
+  petHat.visible = false;
+  petHat.castShadow = true;
+  pet.g.add(petHat);
+  const PET_COSTUMES = [
+    { id: "topi-merah", label: "🎩 Topi Merah", color: 0xe2554d },
+    { id: "topi-ungu", label: "🎓 Topi Ungu", color: 0x9b5de5 },
+    { id: "topi-emas", label: "👑 Topi Emas", color: 0xffd23e },
+    { id: "topi-hijau", label: "🍀 Topi Hijau", color: 0x2f9e44 },
+  ];
 
   // tunggangan (bisa dinaiki)
   const mount = buildCritter(0xb5651d, 1.1, 1.0, 1.6);
@@ -627,6 +696,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   // keadaan animasi "juice" karakter — memberi rasa hidup
   let squash = 0;      // >0 = habis mendarat (memampat lalu memantul balik)
   let wasAirborne = false;
+  let stepSign = 0;    // tanda ayunan kaki terakhir, untuk memicu bunyi langkah
   // sudut naik-turun kamera & zoom, dikendalikan mouse (anak main di laptop)
   let camPitch = 0.62;      // 0 = datar, ~1.4 = dari atas
   let camZoom = 1;          // pengali jarak kamera dari scroll
@@ -783,6 +853,14 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     kid.legL.rotation.x = sw; kid.legR.rotation.x = -sw;
     kid.armL.rotation.x = -sw; kid.armR.rotation.x = sw;
 
+    // bunyi langkah kaki: picu tiap ayunan kaki melewati titik tengah, hanya
+    // saat benar-benar berjalan di tanah (bukan melompat / diam).
+    if (moving && onGround && !riding) {
+      const s = Math.sin(walk);
+      const sign = s > 0.35 ? 1 : s < -0.35 ? -1 : 0;
+      if (sign !== 0 && sign !== stepSign) { sfx.step(sign < 0); stepSign = sign; }
+    } else stepSign = 0;
+
     // squash & stretch + napas halus saat diam — karakter terasa bernyawa.
     // Pivot grup di kaki (y=0), jadi menskala Y membuat kaki tetap menapak.
     const napas = moving ? 0 : Math.sin(t * 2.2) * 0.02;
@@ -804,6 +882,11 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
     // ----- hewan peliharaan -----
     stepCritter(pet, player.position.x - Math.sin(player.rotation.y) * 2, player.position.z - Math.cos(player.rotation.y) * 2, 5, dt, walk);
+    // lonjakan senang setelah diberi makan
+    if (petHop > 0) {
+      petHop = Math.max(0, petHop - dt);
+      pet.g.position.y += Math.abs(Math.sin(petHop * 12)) * 0.4;
+    }
 
     // ----- satwa liar -----
     for (const w of wildlife) {
@@ -948,6 +1031,22 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         }
       }
       pos.needsUpdate = true;
+    }
+
+    // ----- air beriak + awan menghanyut -----
+    water.position.set(player.position.x, WATER_LEVEL + 0.35, player.position.z);
+    {
+      const p = waterGeo.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < p.count; i++) {
+        const bx = p.getX(i), bz = p.getZ(i);
+        p.setY(i, waterBaseY[i] + Math.sin(t * 1.3 + bx * 0.25 + bz * 0.18) * 0.14);
+      }
+      p.needsUpdate = true;
+      waterGeo.computeVertexNormals();
+    }
+    for (const c of cloudGroup.children) {
+      c.position.x += (c.userData.speed as number) * dt;
+      if (c.position.x > HALF + 20) c.position.x = -HALF - 20;
     }
 
     renderer.render(scene, camera);
@@ -1208,6 +1307,54 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         crown.castShadow = true;
         player.add(crown);
       }
+    },
+    // ----- peliharaan: beri makan & kostum -----
+    petCostumes() { return PET_COSTUMES.map((c) => ({ id: c.id, label: c.label })); },
+    feedPet() {
+      petHop = 1.1;
+      burst(pet.g.position.clone().setY(pet.g.position.y + 1), 0xff6b9d, 14);
+      sfx.feed();
+    },
+    setPetCostume(id: string) {
+      const c = PET_COSTUMES.find((x) => x.id === id);
+      if (!c) { petHat.visible = false; return; }
+      (petHat.material as THREE.MeshLambertMaterial).color.setHex(c.color);
+      petHat.visible = true;
+    },
+    // Tempat-tempat penting untuk teleport cepat. Kirim ke HUD agar anak
+    // bisa melompat ke sudut pulau tanpa berjalan jauh.
+    landmarks(): { id: string; label: string }[] {
+      return [
+        { id: "rumah", label: "🏡 Titik Awal" },
+        { id: "desa", label: "🏘️ Desa" },
+        { id: "hutan", label: "🌲 Hutan Lebat" },
+        { id: "danau", label: "🏞️ Tepi Danau" },
+        { id: "salju", label: "🏔️ Puncak Salju" },
+      ];
+    },
+    teleport(id: string) {
+      const spots: Record<string, [number, number]> = {
+        rumah: [0, 0], desa: [4, -6], hutan: [-34, -34], danau: [0, 0], salju: [0, 0],
+      };
+      // danau & salju dicari dinamis: titik air terendah / dataran tertinggi
+      if (id === "danau" || id === "salju") {
+        let best: [number, number] = [0, 0];
+        let bestH = id === "salju" ? -Infinity : Infinity;
+        for (let gx = 4; gx < WORLD; gx += 6)
+          for (let gz = 4; gz < WORLD; gz += 6) {
+            const hh = heights[gx][gz];
+            if (id === "salju" ? hh > bestH : hh <= bestH && hh > 0) {
+              bestH = hh; best = [gx - HALF, gz - HALF];
+            }
+          }
+        spots[id] = best;
+      }
+      const [tx, tz] = spots[id] ?? [0, 0];
+      if (riding) { riding = false; hooks.onRide(false); }
+      player.position.set(tx, groundAt(tx, tz), tz);
+      vy = 0;
+      burst(player.position.clone().setY(player.position.y + 1), 0x7ee6ff, 24);
+      sfx.teleport();
     },
     setHero(shirtHex: number, pantsHex: number) {
       kid.shirt.color.setHex(shirtHex);
