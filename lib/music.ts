@@ -5,7 +5,13 @@ let master: GainNode | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 let step = 0;
 
-const SCALE = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25]; // C mayor pentatonik + oktaf
+// Siang: C mayor pentatonik — cerah & riang.
+const SCALE_DAY = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25];
+// Malam: A minor pentatonik lebih rendah — tenang & menenangkan menjelang tidur.
+const SCALE_NIGHT = [220.0, 261.63, 293.66, 329.63, 392.0, 440.0];
+let SCALE = SCALE_DAY;
+let mood: "day" | "night" = "day";
+let beatMs = 600; // tempo; malam lebih lambat
 
 function ac(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -34,6 +40,28 @@ function note(freq: number, dur: number, gain: number, type: OscillatorType, del
 
 let musicVol = 0.5; // 0..1, diatur pemain
 
+function tick() {
+  if (!music.playing) return;
+  // melodi lembut: satu nada tiap ketukan, kadang jeda. Malam lebih senyap.
+  const rest = mood === "night" ? 0.45 : 0.25;
+  if (Math.random() > rest) {
+    const f = SCALE[Math.floor(Math.random() * SCALE.length)];
+    note(f, mood === "night" ? 1.3 : 0.9, mood === "night" ? 0.038 : 0.045, "triangle");
+  }
+  // pad rendah tiap 4 ketukan
+  if (step % 4 === 0) {
+    const root = SCALE[step % 8 < 4 ? 0 : 3] / 2;
+    note(root, mood === "night" ? 3.2 : 2.4, 0.03, "sine");
+    note(root * 1.5, mood === "night" ? 3.2 : 2.4, 0.02, "sine");
+  }
+  step++;
+}
+
+function restartTimer() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if (music.playing) timer = setInterval(tick, beatMs);
+}
+
 export const music = {
   playing: false,
   setVolume(v: number) {
@@ -41,6 +69,14 @@ export const music = {
     if (master) master.gain.value = musicVol;
   },
   getVolume() { return musicVol; },
+  // Ganti suasana sesuai waktu: siang riang, malam tenang & lebih lambat.
+  setMood(next: "day" | "night") {
+    if (next === mood) return;
+    mood = next;
+    SCALE = next === "night" ? SCALE_NIGHT : SCALE_DAY;
+    beatMs = next === "night" ? 820 : 600;
+    restartTimer();
+  },
   start() {
     const a = ac();
     if (!a || this.playing) return;
@@ -55,21 +91,7 @@ export const music = {
     }
     this.playing = true;
     step = 0;
-    timer = setInterval(() => {
-      if (!this.playing) return;
-      // melodi lembut: satu nada tiap ketukan, kadang jeda
-      if (Math.random() > 0.25) {
-        const f = SCALE[Math.floor(Math.random() * SCALE.length)];
-        note(f, 0.9, 0.045, "triangle");
-      }
-      // pad rendah tiap 4 ketukan
-      if (step % 4 === 0) {
-        const root = SCALE[step % 8 < 4 ? 0 : 3] / 2;
-        note(root, 2.4, 0.03, "sine");
-        note(root * 1.5, 2.4, 0.02, "sine");
-      }
-      step++;
-    }, 600);
+    restartTimer();
   },
   stop() {
     this.playing = false;
