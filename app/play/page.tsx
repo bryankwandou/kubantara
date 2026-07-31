@@ -6,6 +6,9 @@ import { createGame, PALETTE, SHAPES, EMOTES, type Spell, type GameStats, type P
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
 import { music } from "@/lib/music";
 import { sfx } from "@/lib/sound";
+import { SKINS, type Skin } from "@/lib/skins";
+
+interface SkinCard extends Skin { mint: string | null; mintExplorer: string | null; }
 
 // Perk aktif berdasarkan level akun — keahlian benar-benar terasa di gameplay.
 // Peralatan (gear) terbuka pada level yang sama seperti di lib/content.ts,
@@ -153,6 +156,44 @@ export default function PlayPage() {
     const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
   }, [currentResin]);
+
+  // — toko skin on-chain —
+  const [showShop, setShowShop] = useState(false);
+  const [skinData, setSkinData] = useState<{ skins: SkinCard[]; owned: string[] } | null>(null);
+  const [buyingSkin, setBuyingSkin] = useState<string | null>(null);
+
+  const muatSkin = useCallback(async () => {
+    try {
+      const res = await fetch("/api/skin", { cache: "no-store" });
+      const d = await res.json();
+      if (res.ok) setSkinData({ skins: d.skins ?? SKINS.map((s) => ({ ...s, mint: null, mintExplorer: null })), owned: d.owned ?? [] });
+    } catch { /* biarkan; toko tampil tanpa status kepemilikan */ }
+  }, []);
+
+  const pakaiSkin = useCallback((s: Skin) => {
+    gameRef.current?.setHero(s.shirt, s.pants);
+    try { localStorage.setItem("kubantara_skin_aktif", s.id); } catch {}
+    showToastRef.current?.(`Skin ${s.name} dipakai ${s.emoji}`);
+  }, []);
+
+  const beliSkin = useCallback(async (s: SkinCard) => {
+    if (skinData?.owned.includes(s.id)) { pakaiSkin(s); return; }
+    if (keping < s.price) { showToastRef.current?.(`Keping kurang (butuh ${s.price} 💎). Main dungeon untuk dapat keping.`); return; }
+    setBuyingSkin(s.id);
+    try {
+      const res = await fetch("/api/skin", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skinId: s.id }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) { showToastRef.current?.(d?.error ?? "Gagal membeli"); return; }
+      const nk = keping - s.price;
+      setKeping(nk); try { localStorage.setItem("kubantara_keping", String(nk)); } catch {}
+      setSkinData((prev) => prev ? { ...prev, owned: [...prev.owned, s.id] } : prev);
+      pakaiSkin(s);
+      showToastRef.current?.(`Berhasil! ${s.name} tercatat di Solana devnet ✅`);
+    } finally { setBuyingSkin(null); }
+  }, [keping, skinData, pakaiSkin]);
 
   const masukDungeon = useCallback(() => {
     const g = gameRef.current;
@@ -328,6 +369,12 @@ export default function PlayPage() {
       if (p?.stats?.tamed) game.setTamedCount(Number(p.stats.tamed));
       const hero = HEROES.find((h) => h.id === prof.activeHero);
       if (hero) game.setHero(hero.shirt, hero.pants);
+      // skin kosmetik yang terakhir dipakai menimpa warna hero
+      try {
+        const savedSkin = localStorage.getItem("kubantara_skin_aktif");
+        const sk = savedSkin ? SKINS.find((s) => s.id === savedSkin) : null;
+        if (sk) game.setHero(sk.shirt, sk.pants);
+      } catch {}
       // keahlian terbuka bertambah kuat mengikuti level
       game.setPerks(perksForLevel(Math.max(prof.level, levelFromXp(prof.xp))));
     })();
@@ -551,6 +598,13 @@ export default function PlayPage() {
           className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-pink-600 shadow sm:px-3 sm:py-2 sm:text-sm"
         >
           🐾
+        </button>
+        <button
+          onClick={() => { setShowShop((v) => !v); if (!skinData) muatSkin(); }}
+          title="Toko skin (bukti di Solana devnet)"
+          className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-violet-600 shadow sm:px-3 sm:py-2 sm:text-sm"
+        >
+          🛍️
         </button>
         <button
           onClick={() => setShowSettings((v) => !v)}
@@ -839,6 +893,58 @@ export default function PlayPage() {
                 {l.label}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Toko skin kosmetik — dibeli pakai keping 💎, dicatat di Solana devnet */}
+      {showShop && (
+        <div className="absolute right-3 top-16 z-30 max-h-[80vh] w-72 overflow-y-auto rounded-2xl bg-white/95 p-4 shadow-xl">
+          <div className="mb-1 flex items-center justify-between">
+            <p className="text-sm font-black text-slate-800">🛍️ Toko Skin</p>
+            <button onClick={() => setShowShop(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+          </div>
+          <p className="mb-3 text-[11px] leading-snug text-slate-500">
+            Skin cuma mengubah tampilan — tidak memengaruhi permainan. Dibeli pakai
+            keping 💎 hasil main dungeon, dan kepemilikannya dicatat di Solana devnet.
+          </p>
+          <div className="mb-3 rounded-lg bg-violet-50 px-3 py-2 text-xs font-black text-violet-700">
+            Keping kamu: 💎 {keping}
+          </div>
+          <div className="space-y-2">
+            {(skinData?.skins ?? SKINS.map((s) => ({ ...s, mint: null, mintExplorer: null }))).map((s) => {
+              const owned = skinData?.owned.includes(s.id) ?? false;
+              const busy = buyingSkin === s.id;
+              return (
+                <div key={s.id} className="flex items-center gap-2 rounded-xl border border-slate-200 p-2">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg"
+                    style={{ background: `#${s.shirt.toString(16).padStart(6, "0")}` }}
+                  >
+                    {s.emoji}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-black text-slate-800">{s.name}</p>
+                    {s.mintExplorer ? (
+                      <a href={s.mintExplorer} target="_blank" rel="noreferrer" className="text-[10px] text-cyan-600 hover:underline">
+                        lihat di Explorer ↗
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">💎 {s.price}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => beliSkin(s)}
+                    disabled={busy || (!owned && keping < s.price)}
+                    className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-black shadow active:scale-95 disabled:opacity-40 ${
+                      owned ? "bg-emerald-500 text-white" : "bg-violet-500 text-white"
+                    }`}
+                  >
+                    {busy ? "…" : owned ? "Pakai" : `💎 ${s.price}`}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
