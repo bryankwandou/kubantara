@@ -227,6 +227,22 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     const xi = Math.round(x) + HALF, zi = Math.round(z) + HALF;
     return heights[xi]?.[zi] ?? 0;
   };
+
+  // Titik kemunculan: cari petak darat kering terdekat dari pusat pulau supaya
+  // anak tidak muncul berdiri di tengah danau. Menyisir melingkar keluar dari
+  // (0,0) sampai menemukan tanah di atas permukaan air.
+  function findDrySpawn(): { x: number; z: number } {
+    for (let r = 0; r < HALF - 2; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; // hanya cincin terluar
+          if (hAt(dx, dz) > WATER_LEVEL + 0.5) return { x: dx, z: dz };
+        }
+      }
+    }
+    return { x: 0, z: 0 };
+  }
+  const spawn = findDrySpawn();
   for (const spot of VILLAGE_SPOTS) {
     // rumah dibangun 3 blok di samping penduduk supaya pintunya menghadap mereka
     const bx = spot.x + 3, bz = spot.z;
@@ -474,7 +490,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   }
   const kid = buildKid();
   const player = kid.g;
-  player.position.set(0, groundAt(0, 0), 0);
+  player.position.set(spawn.x, groundAt(spawn.x, spawn.z), spawn.z);
   scene.add(player);
 
   // preview blok (hantu)
@@ -517,7 +533,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
   // hewan peliharaan (mengikuti pemain)
   const pet = buildCritter(0xf4a340, 0.5, 0.4, 0.7);
-  pet.g.position.set(2, groundAt(2, 0), 1);
+  pet.g.position.set(spawn.x + 2, groundAt(spawn.x + 2, spawn.z + 1), spawn.z + 1);
   scene.add(pet.g);
   // rasa kenyang & lonjakan senang saat diberi makan
   let petHop = 0;
@@ -539,9 +555,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
   // tunggangan (bisa dinaiki)
   const mount = buildCritter(0xb5651d, 1.1, 1.0, 1.6);
-  const mountStart = new THREE.Vector3(6, groundAt(6, 4), 4);
+  const mountStart = new THREE.Vector3(spawn.x + 6, 0, spawn.z + 4);
+  mountStart.y = groundAt(mountStart.x, mountStart.z);
   mount.g.position.copy(mountStart);
-  mount.g.position.y = groundAt(mount.g.position.x, mount.g.position.z);
   scene.add(mount.g);
   let riding = false;
 
