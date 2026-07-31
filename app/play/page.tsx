@@ -62,6 +62,13 @@ const TUTOR = [
   },
 ];
 
+// Resin ala Genshin, tapi ramah anak & SELALU gratis: mengisi ulang sendiri
+// seiring waktu, tak pernah bisa dibeli. Hanya jadi gerbang lembut agar anak
+// tidak menyerbu semua dungeon sekaligus — habis resin, tinggal tunggu.
+const RESIN_MAX = 60;
+const RESIN_REGEN_MS = 60_000; // +1 resin tiap menit → penuh dalam 1 jam
+const DUNGEON_COST = 20;
+
 const SPELLS: { id: Spell; label: string }[] = [
   { id: "jembatan", label: "Jembatan" },
   { id: "bunga", label: "Bunga" },
@@ -102,6 +109,58 @@ export default function PlayPage() {
   const [showPet, setShowPet] = useState(false);
   const [showTutor, setShowTutor] = useState(false);
   const [tutorStep, setTutorStep] = useState(0);
+
+  // — resin (gratis, isi ulang otomatis) & dungeon gua —
+  const [resin, setResin] = useState(RESIN_MAX);
+  const resinBaseRef = useRef(RESIN_MAX);   // nilai resin pasti pada resinTsRef
+  const resinTsRef = useRef(Date.now());
+  const [keping, setKeping] = useState(0);  // keping kristal: hadiah dungeon, mata uang toko skin
+  const showToastRef = useRef<((m: string) => void) | null>(null);
+  const [dungeon, setDungeon] = useState<{
+    near: number | null; inside: number | null; unlocked: boolean; collected: number; total: number;
+  } | null>(null);
+
+  const persistResin = useCallback(() => {
+    try { localStorage.setItem("kubantara_resin", JSON.stringify({ v: resinBaseRef.current, t: resinTsRef.current })); } catch {}
+  }, []);
+  const currentResin = useCallback(() => {
+    const gained = Math.floor((Date.now() - resinTsRef.current) / RESIN_REGEN_MS);
+    return Math.min(RESIN_MAX, resinBaseRef.current + gained);
+  }, []);
+  const spendResin = useCallback((n: number) => {
+    const cur = currentResin();
+    if (cur < n) return false;
+    resinBaseRef.current = cur - n;
+    resinTsRef.current = Date.now();
+    persistResin();
+    setResin(resinBaseRef.current);
+    return true;
+  }, [currentResin, persistResin]);
+
+  // muat resin & keping tersimpan, lalu detak tiap detik untuk isi ulang gratis
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("kubantara_resin");
+      if (raw) { const o = JSON.parse(raw); resinBaseRef.current = Math.min(RESIN_MAX, Number(o.v) || RESIN_MAX); resinTsRef.current = Number(o.t) || Date.now(); }
+      const k = Number(localStorage.getItem("kubantara_keping")); if (Number.isFinite(k)) setKeping(k);
+    } catch {}
+    const tick = () => {
+      const cur = currentResin();
+      if (cur >= RESIN_MAX) { resinBaseRef.current = RESIN_MAX; resinTsRef.current = Date.now(); }
+      setResin(cur);
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [currentResin]);
+
+  const masukDungeon = useCallback(() => {
+    const g = gameRef.current;
+    if (!g || !dungeon || dungeon.near === null || dungeon.unlocked) return;
+    if (!spendResin(DUNGEON_COST)) { showToastRef.current?.(`Resin belum cukup (butuh ${DUNGEON_COST}⚡). Tunggu isi ulang gratis.`); return; }
+    g.unlockDungeon(dungeon.near);
+    showToastRef.current?.("Dungeon terbuka! Kumpulkan semua kristalnya ✨");
+  }, [dungeon, spendResin]);
 
   // tampilkan sambutan hanya sekali per perangkat
   useEffect(() => {
@@ -164,6 +223,7 @@ export default function PlayPage() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3500);
   }, []);
+  showToastRef.current = showToast;
 
   // cek pencapaian di sisi klien untuk umpan balik langsung
   const checkAchievements = useCallback(
@@ -236,6 +296,13 @@ export default function PlayPage() {
       },
       onNpc: (n) => setNpc(n),
       onWeather: (w) => setWeather(w),
+      onDungeon: (d) => {
+        setDungeon(d);
+        if (d.justCleared) {
+          setKeping((k) => { const nk = k + 3; try { localStorage.setItem("kubantara_keping", String(nk)); } catch {} return nk; });
+          showToastRef.current?.("Dungeon selesai! +3 keping kristal ✨");
+        }
+      },
     });
     gameRef.current = game;
 
@@ -376,6 +443,35 @@ export default function PlayPage() {
     <main className="fixed inset-0 select-none overflow-hidden bg-sky-300">
       <canvas ref={canvasRef} className="h-full w-full touch-none" />
 
+      {/* Ajakan / progres dungeon gua */}
+      {dungeon && (dungeon.near !== null || dungeon.inside !== null) && (
+        <div className="pointer-events-none absolute inset-x-0 top-20 z-10 flex justify-center px-4 sm:top-24">
+          <div className="pointer-events-auto rounded-2xl bg-slate-900/85 px-4 py-2.5 text-center text-white shadow-lg backdrop-blur">
+            {dungeon.inside !== null && dungeon.unlocked ? (
+              <p className="text-sm font-bold">
+                🔮 Kristal {dungeon.collected}/{dungeon.total}
+                {dungeon.collected >= dungeon.total
+                  ? " — dungeon selesai! ✨"
+                  : " — dekati kristalnya untuk mengambil"}
+              </p>
+            ) : dungeon.unlocked ? (
+              <p className="text-sm font-bold">Dungeon terbuka — masuk ke gua & kumpulkan kristalnya</p>
+            ) : (
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold">🕳️ Dungeon Gua Kristal</span>
+                <button
+                  onClick={masukDungeon}
+                  disabled={resin < DUNGEON_COST}
+                  className="rounded-xl bg-violet-500 px-3 py-1.5 text-sm font-black shadow transition enabled:hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Masuk −{DUNGEON_COST}⚡
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* HUD atas */}
       <div className="pointer-events-none absolute left-2 top-2 flex max-w-[62vw] flex-wrap items-center gap-1.5 lg:max-w-none">
         <Link href="/" className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-slate-800 shadow sm:px-3 sm:py-2 sm:text-sm">
@@ -384,6 +480,17 @@ export default function PlayPage() {
         <div className="rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-amber-600 shadow sm:px-3 sm:py-2 sm:text-sm">
           ⭐ {stars.got}/{stars.total}
         </div>
+        <div
+          title="Resin mengisi ulang sendiri, gratis. Dipakai untuk masuk dungeon gua."
+          className="rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-violet-600 shadow sm:px-3 sm:py-2 sm:text-sm"
+        >
+          ⚡ {resin}/{RESIN_MAX}
+        </div>
+        {keping > 0 && (
+          <div className="rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-cyan-600 shadow sm:px-3 sm:py-2 sm:text-sm">
+            💎 {keping}
+          </div>
+        )}
         <div className="rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-sky-700 shadow sm:px-3 sm:py-2 sm:text-sm">
           {time}
         </div>

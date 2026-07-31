@@ -69,6 +69,12 @@ export interface GameHooks {
   onStat?: (stats: GameStats) => void;
   onNpc?: (npc: { name: string; line: string } | null) => void;
   onWeather?: (w: "Cerah" | "Hujan" | "Pelangi" | "Salju") => void;
+  // Dungeon gua: `near` = indeks gua yang dekat mulutnya (butuh resin untuk buka),
+  // `inside` = gua yang sedang dimasuki, progres kristal terkumpul di gua itu.
+  onDungeon?: (s: {
+    near: number | null; inside: number | null;
+    unlocked: boolean; collected: number; total: number; justCleared: boolean;
+  }) => void;
 }
 
 export interface GameStats {
@@ -366,8 +372,11 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     );
     mesh.position.copy(p);
     scene.add(mesh);
-    return { mesh, baseY: p.y };
+    // tiap gua punya 3 kristal (lihat perulangan CAVE_SPOTS) → kristal ke-i milik gua i/3
+    return { mesh, baseY: p.y, cave: Math.floor(i / 3), collected: false };
   });
+  // Dungeon: gua yang sudah dibuka pemain (resin dibayar di sisi React).
+  const dungeonUnlocked = new Set<number>();
   // lentera hangat yang menyala hanya saat pemain berada di dalam gua
   const caveGlow = new THREE.PointLight(0x9fe8ff, 0, 18, 2);
   scene.add(caveGlow);
@@ -868,21 +877,58 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     glow.position.copy(player.position).add(new THREE.Vector3(0, 2, 0));
 
     // ----- di dalam gua: gelap & lembap, hanya kristal & lentera yang menerangi -----
-    let insideCave = false;
-    for (const c of caveCenters) {
+    // Sekaligus deteksi dungeon: gua terdekat (mulut) & gua yang dimasuki.
+    let insideCave = -1, nearCave = -1;
+    for (let ci = 0; ci < caveCenters.length; ci++) {
+      const c = caveCenters[ci];
       const dx = player.position.x - c.x, dz = player.position.z - c.z;
-      if (dx * dx + dz * dz < (c.r - 0.4) * (c.r - 0.4)) { insideCave = true; break; }
+      const d2 = dx * dx + dz * dz;
+      if (d2 < (c.r - 0.4) * (c.r - 0.4)) insideCave = ci;
+      if (d2 < (c.r + 3) * (c.r + 3) && nearCave < 0) nearCave = ci;
     }
-    if (insideCave) {
+    if (insideCave >= 0) {
       sun.intensity *= 0.28;
       ambient.intensity *= 0.35;
       caveGlow.intensity = 2.4;
       caveGlow.position.copy(player.position).add(new THREE.Vector3(0, 2, 0));
     } else caveGlow.intensity = 0;
+
+    // kristal: berputar & mengambang; bila gua terbuka & pemain dekat, terkumpul
+    let justCleared = false;
+    const activeCave = insideCave >= 0 ? insideCave : nearCave;
     for (const c of crystals) {
+      if (c.collected) continue;
       c.mesh.rotation.y = t * 1.5;
       c.mesh.position.y = c.baseY + Math.sin(t * 2 + c.baseY) * 0.12;
       c.mesh.scale.setScalar(1 + Math.sin(t * 4 + c.baseY) * 0.12);
+      if (insideCave >= 0 && c.cave === insideCave && dungeonUnlocked.has(insideCave)
+          && c.mesh.position.distanceTo(player.position) < 1.6) {
+        c.collected = true;
+        c.mesh.visible = false;
+        burst(c.mesh.position.clone(), 0x7ee6ff, 20);
+        sfx.magic?.();
+        const total = crystals.filter((k) => k.cave === insideCave).length;
+        const got = crystals.filter((k) => k.cave === insideCave && k.collected).length;
+        if (got >= total) justCleared = true;
+      }
+    }
+    // laporkan keadaan dungeon ke React (untuk resin, tombol masuk, hadiah)
+    if (activeCave >= 0 || lastDungeonCave >= 0) {
+      const cave = activeCave >= 0 ? activeCave : lastDungeonCave;
+      const total = crystals.filter((k) => k.cave === cave).length;
+      const collected = crystals.filter((k) => k.cave === cave && k.collected).length;
+      const sig = `${nearCave}|${insideCave}|${dungeonUnlocked.has(cave)}|${collected}|${total}`;
+      // hanya kirim saat berubah (atau saat baru tuntas) supaya React tak render tiap frame
+      if (sig !== lastDungeonSig || justCleared) {
+        hooks.onDungeon?.({
+          near: nearCave >= 0 ? nearCave : null,
+          inside: insideCave >= 0 ? insideCave : null,
+          unlocked: dungeonUnlocked.has(cave),
+          collected, total, justCleared,
+        });
+        lastDungeonSig = sig;
+      }
+      lastDungeonCave = activeCave;
     }
     const sky = skyNight.clone();
     if (daylight > 0.5) sky.lerpColors(skyDusk, skyDay, (daylight - 0.5) * 2);
@@ -1150,6 +1196,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     renderer.render(scene, camera);
   }
   let lastLabel = "";
+  let lastDungeonCave = -1;
+  let lastDungeonSig = "";
   frame();
 
   return {
@@ -1461,6 +1509,17 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     setHero(shirtHex: number, pantsHex: number) {
       kid.shirt.color.setHex(shirtHex);
       kid.pants.color.setHex(pantsHex);
+    },
+    // React memanggil ini setelah resin dibayar: buka gua agar kristalnya bisa
+    // dikumpulkan. Denyut cahaya kecil sebagai tanda dungeon aktif.
+    unlockDungeon(caveIndex: number) {
+      dungeonUnlocked.add(caveIndex);
+      lastDungeonSig = ""; // paksa kirim keadaan terbaru ke React
+      caveGlow.intensity = 2.4;
+      sfx.teleport();
+    },
+    dungeonCount() {
+      return caveCenters.length;
     },
     dispose() {
       cancelAnimationFrame(raf);
