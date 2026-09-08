@@ -75,6 +75,36 @@ export function ensureSchema() {
       // supaya kata sandi anak tidak bisa ditebak paksa.
       await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INT NOT NULL DEFAULT 0`;
       await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS lock_until TIMESTAMPTZ`;
+      // jejak percobaan daftar per jaringan, untuk membendung pendaftaran massal.
+      // Alamat IP tidak disimpan mentah — hanya sidik HMAC-nya, jadi tak bisa
+      // dibalik jadi identitas anak kalau basis data bocor.
+      await sql`CREATE TABLE IF NOT EXISTS signup_attempts (
+        id BIGSERIAL PRIMARY KEY,
+        ip_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS signup_attempts_window ON signup_attempts (ip_hash, created_at)`;
+      // Keping kristal & resin dulu disimpan di localStorage — artinya anak mana
+      // pun yang membuka konsol peramban bisa memberi dirinya seribu keping dan
+      // memborong seluruh toko. Sekarang keduanya milik server.
+      //
+      // Resin tidak disimpan sebagai angka berjalan, melainkan sebagai nilai
+      // pasti pada satu saat (resin_base pada resin_at). Isi ulangnya dihitung
+      // dari selisih waktu, jadi tak perlu tugas berkala dan tetap benar walau
+      // anak tidak membuka permainan berhari-hari.
+      await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS keping INT NOT NULL DEFAULT 0`;
+      await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS resin_base INT NOT NULL DEFAULT 60`;
+      await sql`ALTER TABLE progress ADD COLUMN IF NOT EXISTS resin_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`;
+      // Satu baris per masuk dungeon. Hadiah keping hanya bisa diklaim dengan
+      // menunjuk baris yang belum selesai — jadi memanggil "selesai" berulang
+      // kali tidak menghasilkan keping tambahan.
+      await sql`CREATE TABLE IF NOT EXISTS dungeon_runs (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        finished_at TIMESTAMPTZ
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS dungeon_runs_user ON dungeon_runs (user_id, finished_at)`;
     })();
   }
   return ready;

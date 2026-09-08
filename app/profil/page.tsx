@@ -31,6 +31,30 @@ export default function ProfilPage() {
   const [username, setUsername] = useState<string | null>(null);
   const [p, setP] = useState<ProgressData | null>(null);
   const [loading, setLoading] = useState(true);
+  // penghapusan akun: tertutup di balik satu klik + kata sandi, supaya tak
+  // pernah terjadi karena tangan anak tak sengaja menyenggol layar
+  const [hapusBuka, setHapusBuka] = useState(false);
+  const [hapusSandi, setHapusSandi] = useState("");
+  const [hapusGalat, setHapusGalat] = useState("");
+  const [hapusSibuk, setHapusSibuk] = useState(false);
+
+  async function hapusAkun(e: React.FormEvent) {
+    e.preventDefault();
+    setHapusGalat("");
+    setHapusSibuk(true);
+    try {
+      const res = await fetch("/api/akun", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: hapusSandi }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) { setHapusGalat(d?.error ?? "Gagal menghapus akun"); return; }
+      router.replace("/");
+    } finally {
+      setHapusSibuk(false);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -226,6 +250,63 @@ export default function ProfilPage() {
               );
             })}
           </div>
+        </Section>
+
+        {/* Hapus akun — dijanjikan kebijakan privasi, diwajibkan UU PDP.
+            Ditaruh paling bawah dan tidak berwarna mencolok: ini pintu keluar,
+            bukan ajakan. */}
+        <Section title="Akun">
+          <Link
+            href="/bukti"
+            className="mb-3 inline-block rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-slate-700"
+          >
+            🔎 Bukti kepemilikan skin (untuk orang tua)
+          </Link>
+          <br />
+          {!hapusBuka ? (
+            <button
+              onClick={() => setHapusBuka(true)}
+              className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-400 transition hover:border-rose-500/60 hover:text-rose-300"
+            >
+              Hapus akun & semua data saya
+            </button>
+          ) : (
+            <form onSubmit={hapusAkun} className="space-y-3">
+              <p className="text-sm text-slate-300">
+                Semua bintang, bangunan, pencapaian, dan misi akan hilang selamanya.
+                Ini tidak bisa dibatalkan. Kalau yakin, ketik kata sandimu.
+              </p>
+              <label className="block text-xs font-semibold text-slate-400" htmlFor="sandi-hapus">
+                Kata sandi
+              </label>
+              <input
+                id="sandi-hapus"
+                type="password"
+                value={hapusSandi}
+                onChange={(e) => setHapusSandi(e.target.value)}
+                autoComplete="current-password"
+                className="w-full max-w-xs rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-slate-100 outline-none focus:border-rose-400"
+              />
+              {hapusGalat && (
+                <p role="alert" className="text-sm text-rose-300">{hapusGalat}</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  disabled={hapusSibuk || !hapusSandi}
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                >
+                  {hapusSibuk ? "Menghapus..." : "Ya, hapus permanen"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setHapusBuka(false); setHapusSandi(""); setHapusGalat(""); }}
+                  className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-slate-200"
+                >
+                  Batal
+                </button>
+              </div>
+            </form>
+          )}
         </Section>
 
         <div className="mt-8 text-center">

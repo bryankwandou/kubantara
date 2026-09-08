@@ -1,5 +1,222 @@
 # Kubantara — Checklist Induk Pengembangan
 
+## Audit kendali & dunia — 2026-08-07
+
+Laporan penguji kali ini menyebut kendali terbalik, tombol saling membajak, tidak
+ada tata letak lanskap, lantai tembus, dan gua yang tak bisa dimasuki. Semuanya
+ditelusuri sampai ke baris penyebabnya, diperbaiki, lalu dibuktikan dengan uji
+otomatis yang memeriksa **arah gerak sungguhan**, bukan sekadar "ada piksel berubah".
+
+**Kendali — `node uji-kendali.mjs` (33/33 lulus)**
+
+- [x] **Gerak terbalik di kedua sumbu.** `lib/voxel-game.ts` menghitung arah jalan
+      sebagai `atan2(ix, iz) + camYaw`, padahal kamera duduk di
+      `pemain − (sin, cos) × jarak` sehingga arah pandang adalah `+(sin, cos)`.
+      Akibatnya **W mendorong pemain menjauhi arah pandang dan D menggeser ke kiri** —
+      persis yang dilaporkan sebagai "abnormal". Sudutnya kini `atan2(−ix, iz) + camYaw`,
+      yang memenuhi arah pandang sekaligus arah kanan layar `(−cos, sin)`.
+- [x] **Stik membajak jari yang salah.** Stik memakai `TouchEvent.touches[0]` —
+      jari *pertama* di layar, siapa pun dia. Begitu anak menahan stik lalu menekan
+      LOMPAT, jari kedua itu menjadi `touches[0]` dan stik melompat mengikutinya.
+      Inilah "tombol belum terintegrasi": tombolnya bekerja, tapi menekannya
+      membajak arah jalan. Sekarang memakai Pointer Events dengan `pointerId`
+      terkunci + `setPointerCapture`.
+- [x] **Stik kini jalan di desktop juga.** Dulu hanya mendengarkan `touch*`, jadi
+      di peramban laptop ia cuma hiasan. Pointer Events menyatukan tetikus, pena,
+      dan sentuh dalam satu jalur.
+- [x] **Knop stik bergerak mengikuti jari** dan meluncur pulang ke tengah saat
+      dilepas; lingkarannya menyala saat dipegang. Sebelumnya knop diam mati di
+      tengah — anak tidak tahu stiknya sudah terpegang atau belum.
+- [x] **Kendali tertimbun panel.** Stik & LOMPAT tidak punya `z-index`, sedangkan
+      laci cetakan memakai `z-20` — di layar sempit kendalinya benar-benar tertutup.
+      Keduanya kini `z-30`.
+- [x] **Pintasan papan ketik untuk semua tombol aksi**: F bangun, R bongkar,
+      B cetakan, T jinakkan, G naik. Tombol layar dan pintasan memanggil fungsi
+      yang sama (`jalankanAksi`) — tidak ada logika yang hanya hidup di `onClick`.
+- [x] **Berhenti saat jendela kehilangan fokus** — dulu anak yang pindah tab
+      meninggalkan pemainnya berjalan terus.
+
+**Tata letak lanskap — belum ada sama sekali sebelumnya**
+
+- [x] `useTataLetak()` membedakan tiga bentuk: `hp-baring` (tinggi ≤ 560 px dan
+      lebih lebar daripada tinggi), `hp-tegak`, dan `lebar`. Patokannya **tinggi**,
+      bukan lebar — HP yang dimiringkan menyisakan ~370 px dan di situlah tata
+      letak lama runtuh.
+- [x] Saat dimiringkan: kolom sihir (kiri-tengah) dan kolom aksi (kanan-tengah)
+      turun jadi baris rapat di tepi bawah, palet warna pindah ke tepi kanan
+      sebagai kisi 2 lajur, stik & LOMPAT mengecil, dan panel `bottom-44`
+      (laci cetakan, dialog NPC) naik ke `bottom-24` supaya tidak terpotong.
+- [x] Diuji: tidak satu pun tombol terpotong keluar layar 740×360; stik, LOMPAT,
+      dan tombol aksi tidak saling bertumpuk; memutar HP saat sedang bermain
+      mengubah tata letak tanpa mematikan WebGL.
+- [x] Ajakan "miringkan HP" yang bisa ditutup, hanya di layar sentuh yang tegak.
+
+**Dunia & tabrakan — `node uji-dunia.mjs` (14/14 lulus)**
+
+- [x] **"Properti palsu": anak melayang setengah balok.** `groundAt` mengembalikan
+      `puncak + 1`, padahal kubus 1×1×1 berpusat di `y` sehingga permukaannya
+      `y + 0.5`. Setiap balok menaikkan pijakan 1.5, bukan 1. Sekarang tepat 1.
+- [x] **"Lantai tembus" & tidak bisa masuk rumah.** Buku tabrakan hanya menyimpan
+      **balok tertinggi** per kolom (`colTop`). Akibatnya sebuah balok melayang
+      menahan pemain di udara, dan berjalan ke arah rumah langsung mengangkat anak
+      ke **atap** — bagian dalam bangunan tak pernah bisa dimasuki. Diganti dengan
+      daftar permukaan per kolom (`colTops`) plus `groundAt(x, z, dariY)` yang
+      memilih permukaan tertinggi yang masih terjangkau satu langkah (1.05).
+      Hasilnya: **mode dalam rumah** bekerja, tangga tetap bisa dinaiki selangkah
+      demi selangkah, dan atap tetap bisa dipijak dari atas.
+- [x] **Gua tidak terasa seperti gua.** Cangkang batunya tidak punya tabrakan sama
+      sekali, jadi anak menembusnya dari segala arah. Sel cangkang kini dicatat di
+      `batuPadat` dan diperiksa oleh `terhalang()`; gerak memakai geseran menyusur
+      dinding (coba dua sumbu, lalu satu sumbu) supaya anak tidak mentok kaku di
+      sudut. **Mulut gua tetap terbuka** — diuji: dinding timur & barat padat,
+      mulut terbuka, ruang dalam kosong, dan berjalan dari mulut benar-benar
+      membawa anak masuk.
+
+**Mutu grafis & kinerja — `node uji-kinerja.mjs` (9/9 lulus)**
+
+- [x] **Mutu grafis kini bisa dipilih**: Otomatis / Rendah / Sedang / Tinggi di
+      panel Pengaturan, tersimpan per perangkat. Pilihannya nyata — mengubah
+      ketajaman piksel, bayangan (mati di Rendah), jarak pandang & kabut,
+      kerapatan air, jumlah awan dan rumput. Diukur: **Rendah 3,1× lebih ringan
+      daripada Tinggi** (1,35 vs 0,43 FPS di perender perangkat lunak tanpa GPU).
+- [x] **Panel "Ukuran sebenarnya"** menampilkan FPS sungguhan dari gelung gambar
+      dan waktu pulang-pergi ke server, apa adanya.
+- [x] **`/api/ping`** — titik ukur latency yang tidak menyentuh basis data.
+      Sebelumnya latency diukur ke `/api/auth/me`, yang setiap kali menanyakan
+      sesi ke basis data Neon di benua lain; angkanya bercerita tentang jarak ke
+      basis data, bukan tentang jaringan si anak.
+
+**Catatan jujur untuk laporan audit**
+
+- **Latency di bawah 4 ms tidak bisa dicapai lewat internet.** Diukur di
+  `localhost` — tanpa internet sama sekali — median pulang-pergi ke `/api/ping`
+  adalah **4,2 ms**, tercepat 2,2 ms. Dari HP anak ke server sungguhan angkanya
+  ditentukan jarak fisik dan lompatan jaringan (puluhan milidetik) dan tidak ada
+  perubahan perangkat lunak yang bisa menembus batas itu. Jika aturan marketplace
+  benar menyebut 4 ms, kemungkinan besar yang dimaksud **waktu per bingkai**, bukan
+  latency jaringan — dan itu bisa diukur lewat panel Pengaturan.
+- **Waktu baca basis data 260–405 ms** dari mesin ini, jauh lebih besar daripada
+  latency jaringannya. Inilah yang sebenarnya terasa lambat saat menyimpan progres,
+  dan sambungannya kadang timeout (1 dari 3 permintaan gagal saat pengujian).
+  Ini perlu ditangani sebelum 12 anak mendaftar bersamaan.
+- **Opsi grafis "selengkap Genshin Impact" tidak dikerjakan** dan tidak realistis
+  untuk permainan voxel di peramban. Yang ada adalah empat tingkat mutu yang
+  benar-benar terukur bedanya.
+- **Tidak ditemukan sumber untuk "auditor resmi Google/itch.io" atau skor 6/100.**
+  Google dan itch.io tidak menjalankan audit semacam itu. Kalau dokumennya ada,
+  butir-butirnya bisa dikerjakan satu per satu.
+- **Mode dalam gunung / arena perang belum ada** — belum dikerjakan sama sekali.
+
+
+## Audit situs — 2026-08-04
+
+**Diuji, bukan dikira-kira**
+
+- [x] **12 anak mendaftar sendiri: 12/12 berhasil.** `node uji-daftar-12-anak.mjs`
+      menjalankan 12 peramban terpisah (masing-masing cookie & penyimpanan
+      sendiri), mengisi formulir lewat labelnya seperti anak sungguhan, lalu
+      memastikan dunia benar-benar tergambar sesudahnya (278–292 warna berbeda
+      per anak; layar polos hanya menghasilkan segelintir).
+- [x] **Uji grafis lulus lagi setelah semua perubahan** — 258 warna saat pertama
+      muat, 251 setelah keluar-masuk `/play`, nol error JavaScript.
+- [x] 50 akun uji dihapus dari basis data; tersisa 3 akun sungguhan.
+      Skripnya `scripts/bersihkan-akun-uji.mjs`, patokannya domain `@contoh.test`.
+
+**Diperbaiki hari ini**
+
+- [x] **Formulir daftar & masuk tidak punya label sama sekali** — hanya
+      placeholder. Begitu anak mengetik, tulisan penuntunnya hilang dan ia tak
+      lagi tahu kotak itu untuk apa; pembaca layar pun bisu. Sekarang tiap kotak
+      punya `<label>` sungguhan yang tetap terlihat, dan pesan galat memakai
+      `role="alert"` supaya dibacakan.
+- [x] **Rate limiting `/api/auth/register`** — maksimal 30 pendaftaran per jam
+      per jaringan. Sengaja longgar: 12 anak di satu wifi tampak sebagai satu
+      alamat IP, dan batas ketat akan menolak anak ke-6 tanpa alasan yang bisa
+      ia mengerti. Yang dihitung hanya akun yang jadi, sehingga salah ketik tidak
+      memakan jatah. Alamat IP tidak disimpan mentah — hanya sidik HMAC-nya.
+- [x] `loading.tsx` — pindah halaman tak lagi berkedip putih kosong; anak
+      menafsirkan layar kosong sebagai rusak lalu menekan tombol berkali-kali.
+
+**Temuan yang ternyata bukan bug produk**
+
+- Pendaftaran serentak sempat gagal 12/12 di uji. Penyebabnya dua-duanya ada di
+  pihak penguji, bukan di situs: (a) robot mengisi formulir sebelum React selesai
+  hidrasi sehingga ketikan masuk ke DOM tapi tidak ke state — anak sungguhan
+  butuh beberapa detik membaca dulu, jadi tak pernah kena; (b) 12 Chromium ber-WebGL
+  di satu laptop saling merebut CPU. Uji sekarang menunggu React hidup dan berjalan
+  3 sekaligus. Diperiksa terpisah: 12 pendaftaran API serentak semuanya 200 dalam ~6 detik.
+
+**Masih kurang — urut dampak**
+
+_Menghalangi produksi_
+- `GUARDIAN_SECRET_B58` + `SOLANA_RPC_URL` belum diset di Vercel → tombol beli
+  skin gagal di kubantara.vercel.app walau jalan di lokal. **Butuh tindakan pemilik akun:**
+  Vercel → Settings → Environment Variables, lalu `npx vercel --prod --yes`.
+
+_Bisa dicurangi_
+- Keping kristal & resin masih di `localStorage` → bisa diubah lewat konsol.
+  Harus pindah ke Postgres dan divalidasi server sebelum mint.
+
+_Kewajiban hukum_
+- Belum ada tombol hapus akun & data anak (dijanjikan kebijakan privasi, wajib UU PDP).
+- Reset kata sandi lewat email belum ada.
+
+_Kualitas_
+- Belum ada halaman `/verify` bukti kepemilikan skin on-chain untuk orang tua.
+- Kartu skin di toko hanya memperlihatkan warna baju, bukan celana.
+- Uji belum jalan otomatis di CI.
+- Belum pernah dimainkan anak sungguhan dari awal sampai akhir.
+
+## Audit situs — 2026-08-02
+
+Hasil menelusuri seluruh rute, metadata, dan HUD. Yang di bawah ini semuanya
+diperiksa langsung di berkas, bukan dikira-kira.
+
+**Selesai hari ini**
+- [x] **Bug grafis nyata**: canvas dipakai ulang setelah `renderer.dispose()`.
+      Sekali konteks WebGL dibuang, canvas yang sama tak bisa dipakai lagi →
+      layar kosong setiap kali komponen dipasang ulang (StrictMode di dev,
+      dan navigasi bolak-balik ke `/play`). Sekarang tiap permainan mendapat
+      canvas yang benar-benar baru, dan `forceContextLoss()` membebaskan memori GPU.
+- [x] `<html lang="en">` → `lang="id"`. Situs berbahasa Indonesia tapi mengaku
+      Inggris; merusak pembaca layar dan mesin pencari.
+- [x] Metadata sosial: Open Graph, Twitter card, `metadataBase`, template judul.
+- [x] `opengraph-image` — tautan yang dibagikan tak lagi tampil polos.
+- [x] `manifest.webmanifest` — bisa dipasang ke layar depan tablet, buka layar penuh.
+- [x] `robots.txt` + `sitemap.xml`; `/play`, `/profil`, `/ortu` tak diindeks.
+- [x] `viewport` mengunci zoom cubit — anak tak sengaja mem-zoom dunia saat main.
+- [x] Halaman **404** dan **error** ramah anak (sebelumnya tak ada sama sekali —
+      anak melihat layar teknis bawaan Next.js).
+- [x] `aria-label` pada 6 tombol HUD beremoji (sebelumnya **nol** di seluruh
+      aplikasi — pembaca layar hanya membaca "tombol").
+- [x] Aset bawaan Next.js (`next.svg`, `vercel.svg`, dll) dibuang; diganti `ikon.svg` kubus.
+
+**Masih kurang — urut dampak**
+
+_Menghalangi produksi_
+1. `GUARDIAN_SECRET_B58` + `SOLANA_RPC_URL` belum diset di Vercel → tombol beli
+   skin gagal di kubantara.vercel.app walau jalan di lokal. **Butuh tindakan pemilik akun.**
+
+_Bisa dicurangi_
+2. Keping kristal & resin disimpan di `localStorage` → anak (atau siapa pun)
+   bisa mengubahnya lewat konsol dan membeli skin gratis. Harus pindah ke
+   Postgres dan divalidasi di server sebelum mint.
+3. `/api/auth/register` tak punya rate limiting (`/api/auth/login` sudah punya) →
+   pendaftaran massal otomatis masih mungkin.
+
+_Kewajiban hukum & kepercayaan orang tua_
+4. Tidak ada tombol **hapus akun & data anak**. Kebijakan privasi menjanjikannya,
+   tapi belum ada jalannya — ini kewajiban UU PDP, bukan fitur tambahan.
+5. Reset kata sandi lewat email belum ada (baru reset oleh orang tua).
+6. Belum ada halaman `/verify` untuk menunjukkan bukti kepemilikan skin on-chain
+   kepada orang tua tanpa harus paham Solana Explorer.
+
+_Kualitas & kelengkapan_
+7. Tak ada `loading.tsx` — layar kosong sesaat saat pindah halaman.
+8. Kartu skin di toko hanya memperlihatkan warna baju; warna celana tak terlihat.
+9. Uji otomatis belum jalan di CI — semua uji masih dijalankan tangan.
+10. Belum pernah dimainkan manusia sungguhan dari awal sampai akhir.
+
 ## Sisa pekerjaan, urut dampak ke anak (per 2026-07-23)
 
 **Menghalangi anak main hari ini**

@@ -36,9 +36,19 @@ export default function MasukPage() {
         <h1 className="mt-4 text-3xl font-black">Masuk ke Kubantara</h1>
         <p className="mt-2 text-slate-400">Lanjutkan petualangan dari tempat terakhir kamu berhenti.</p>
         <form onSubmit={submit} className="mt-8 space-y-4">
-          <input className={input} placeholder="Nama pengguna atau email" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-          <input className={input} type="password" placeholder="Kata sandi" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-          {err && <p className="rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{err}</p>}
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-300" htmlFor="username">
+              Nama pengguna atau email
+            </label>
+            <input id="username" className={input} value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-semibold text-slate-300" htmlFor="password">
+              Kata sandi
+            </label>
+            <input id="password" className={input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+          </div>
+          {err && <p role="alert" className="rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{err}</p>}
           <button
             disabled={busy}
             className="w-full rounded-xl bg-emerald-500 py-3.5 text-lg font-black text-slate-950 transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50"
