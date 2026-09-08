@@ -31,6 +31,7 @@ export default function DaftarPage() {
 
   const input =
     "w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition-colors focus:border-cyan-400";
+  const label = "mb-1.5 block text-sm font-semibold text-slate-300";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 py-12 text-slate-100">
@@ -41,10 +42,24 @@ export default function DaftarPage() {
           Progres bintang, bangunan, pahlawan, dan pencapaian anak tersimpan aman di akunnya sendiri.
         </p>
         <form onSubmit={submit} className="mt-8 space-y-4">
-          <input className={input} placeholder="Nama pengguna" value={form.username} onChange={set("username")} autoComplete="username" />
-          <input className={input} type="email" placeholder="Email" value={form.email} onChange={set("email")} autoComplete="email" />
-          <input className={input} type="password" placeholder="Kata sandi (minimal 8 karakter)" value={form.password} onChange={set("password")} autoComplete="new-password" />
-          <input className={input} type="password" placeholder="Ulangi kata sandi" value={form.confirm} onChange={set("confirm")} autoComplete="new-password" />
+          {/* Label sungguhan, bukan cuma placeholder: begitu anak mulai mengetik,
+              placeholder hilang dan ia lupa kotak ini untuk apa. Label tetap terlihat. */}
+          <div>
+            <label className={label} htmlFor="username">Nama pengguna</label>
+            <input id="username" className={input} placeholder="misal: bintang_kecil" value={form.username} onChange={set("username")} autoComplete="username" autoFocus />
+          </div>
+          <div>
+            <label className={label} htmlFor="email">Email</label>
+            <input id="email" className={input} type="email" placeholder="boleh email orang tua" value={form.email} onChange={set("email")} autoComplete="email" />
+          </div>
+          <div>
+            <label className={label} htmlFor="password">Kata sandi</label>
+            <input id="password" className={input} type="password" placeholder="minimal 8 karakter" value={form.password} onChange={set("password")} autoComplete="new-password" />
+          </div>
+          <div>
+            <label className={label} htmlFor="confirm">Konfirmasi kata sandi</label>
+            <input id="confirm" className={input} type="password" placeholder="ketik ulang yang tadi" value={form.confirm} onChange={set("confirm")} autoComplete="new-password" />
+          </div>
           <label className="flex items-start gap-3 text-sm text-slate-300">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 accent-cyan-400" />
             <span>
@@ -52,7 +67,7 @@ export default function DaftarPage() {
               <Link href="/privasi" className="text-cyan-300 underline">kebijakan privasi</Link> Kubantara.
             </span>
           </label>
-          {err && <p className="rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{err}</p>}
+          {err && <p role="alert" className="rounded-xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{err}</p>}
           <button
             disabled={busy}
             className="w-full rounded-xl bg-amber-400 py-3.5 text-lg font-black text-slate-900 transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50"

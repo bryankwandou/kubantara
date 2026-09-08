@@ -1,10 +1,39 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { createHmac } from "crypto";
 import { sql, ensureSchema } from "@/lib/db";
 import { setSession } from "@/lib/auth";
 
+// Batas pendaftaran per jaringan per jam. Sengaja longgar: satu kelas berisi
+// 12 anak yang mendaftar berbarengan lewat wifi yang sama tampak seperti satu
+// alamat IP. Kalau batasnya ketat, anak ke-6 akan ditolak tanpa sebab yang bisa
+// ia mengerti. 30 masih jauh di bawah kecepatan robot pendaftar massal.
+const BATAS_PER_JAM = 30;
+
+// Alamat IP anak tidak pernah disimpan mentah — hanya sidiknya.
+function sidikJaringan(req: Request) {
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+    req.headers.get("x-real-ip") ||
+    "tak-diketahui";
+  return createHmac("sha256", process.env.AUTH_SECRET ?? "kubantara")
+    .update(ip)
+    .digest("base64url");
+}
+
 export async function POST(req: Request) {
   await ensureSchema();
+
+  const sidik = sidikJaringan(req);
+  const baru = await sql`
+    SELECT COUNT(*)::int AS n FROM signup_attempts
+    WHERE ip_hash = ${sidik} AND created_at > NOW() - INTERVAL '1 hour'`;
+  if (Number(baru[0].n) >= BATAS_PER_JAM)
+    return NextResponse.json(
+      { error: "Terlalu banyak pendaftaran dari jaringan ini. Coba lagi satu jam lagi." },
+      { status: 429 }
+    );
+
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Permintaan tidak sah" }, { status: 400 });
 
@@ -36,6 +65,11 @@ export async function POST(req: Request) {
     RETURNING id, username`;
   const user = rows[0];
   await sql`INSERT INTO progress (user_id) VALUES (${user.id})`;
+  // Yang dihitung hanya akun yang benar-benar jadi. Salah ketik email atau
+  // konfirmasi sandi tidak boleh menghabiskan jatah anak — mereka pasti salah
+  // ketik beberapa kali sebelum berhasil.
+  await sql`INSERT INTO signup_attempts (ip_hash) VALUES (${sidik})`;
+  await sql`DELETE FROM signup_attempts WHERE created_at < NOW() - INTERVAL '2 hours'`;
   await setSession(Number(user.id), user.username);
   return NextResponse.json({ ok: true, username: user.username });
 }

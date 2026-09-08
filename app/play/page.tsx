@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { createGame, PALETTE, SHAPES, EMOTES, type Spell, type GameStats, type Perks, type Blueprint, type Shape } from "@/lib/voxel-game";
+import { createGame, PALETTE, SHAPES, EMOTES, KUALITAS, type Spell, type GameStats, type Perks, type Blueprint, type Shape, type Kualitas } from "@/lib/voxel-game";
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
 import { music } from "@/lib/music";
 import { sfx } from "@/lib/sound";
@@ -51,7 +51,7 @@ const TUTOR = [
   {
     emoji: "🕹️",
     judul: "Cara berjalan",
-    isi: "Di laptop: tombol W A S D untuk jalan, spasi untuk lompat, dan seret mouse untuk melihat sekeliling (scroll untuk memperbesar). Di HP: geser bulatan di kiri bawah, tekan LOMPAT di kanan bawah.",
+    isi: "Di laptop: W A S D untuk jalan (W maju), spasi untuk lompat, seret mouse untuk melihat sekeliling, scroll untuk memperbesar. Tombol F bangun, R bongkar, B cetakan, T jinakkan, G naik tunggangan. Di HP: geser bulatan di kiri bawah — dorong ke atas untuk maju — dan tekan LOMPAT di kanan bawah. Miringkan HP-mu supaya pulaunya terlihat lebih lebar.",
   },
   {
     emoji: "🧱",
@@ -72,6 +72,18 @@ const RESIN_MAX = 60;
 const RESIN_REGEN_MS = 60_000; // +1 resin tiap menit → penuh dalam 1 jam
 const DUNGEON_COST = 20;
 
+// Tombol aksi di layar. Tiap aksi punya satu pintasan papan ketik, dan tombol
+// layar maupun pintasan itu memanggil fungsi yang sama persis — dulu tombolnya
+// hanya bisa diklik dan pemain laptop tak punya jalan pintas sama sekali.
+type Aksi = "bangun" | "cetakan" | "bongkar" | "jinak" | "tunggang";
+const AKSI: { id: Aksi; label: string; tombol: string; warna: string; warnaNyala: string }[] = [
+  { id: "bangun",   label: "Bangun",   tombol: "f", warna: "bg-emerald-500", warnaNyala: "bg-emerald-700" },
+  { id: "cetakan",  label: "Cetakan",  tombol: "b", warna: "bg-sky-500",     warnaNyala: "bg-sky-700" },
+  { id: "bongkar",  label: "Bongkar",  tombol: "r", warna: "bg-rose-500",    warnaNyala: "bg-rose-700" },
+  { id: "jinak",    label: "Jinakkan", tombol: "t", warna: "bg-pink-500",    warnaNyala: "bg-pink-700" },
+  { id: "tunggang", label: "Naik",     tombol: "g", warna: "bg-amber-500",   warnaNyala: "bg-amber-600" },
+];
+
 const SPELLS: { id: Spell; label: string }[] = [
   { id: "jembatan", label: "Jembatan" },
   { id: "bunga", label: "Bunga" },
@@ -88,10 +100,49 @@ interface Profile {
   activeHero: string;
 }
 
+// Bentuk layar yang sedang dipakai anak. Sampai sekarang halaman ini hanya punya
+// satu tata letak — dirancang untuk HP tegak — sehingga di HP yang dimiringkan
+// kolom sihir (kiri-tengah) dan kolom aksi (kanan-tengah) menabrak stik dan
+// menutupi separuh pulau. Tiga bentuk ini yang dibedakan:
+//   "hp-baring" — layar pendek & melebar: semua kendali turun ke tepi bawah
+//   "hp-tegak"  — layar sempit & tinggi: seperti sebelumnya
+//   "lebar"     — laptop/tablet besar: ada papan ketik, kendali layar mengecil
+type Bentuk = "hp-baring" | "hp-tegak" | "lebar";
+
+function useTataLetak() {
+  // Nilai awal harus sama di server dan di peramban, kalau tidak React protes
+  // saat hidrasi. Bentuk sebenarnya diukur pada efek pertama, sebelum cat pertama.
+  const [tata, setTata] = useState<{ bentuk: Bentuk; sentuh: boolean }>({ bentuk: "lebar", sentuh: false });
+  useEffect(() => {
+    const ukur = () => {
+      const l = window.innerWidth, t = window.innerHeight;
+      const sentuh = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+      // Patokannya tinggi, bukan lebar: HP dimiringkan menyisakan ~370px tinggi,
+      // dan di situlah tata letak lama runtuh.
+      const bentuk: Bentuk = t <= 560 && l > t ? "hp-baring" : l < 700 ? "hp-tegak" : "lebar";
+      setTata((lama) => (lama.bentuk === bentuk && lama.sentuh === sentuh ? lama : { bentuk, sentuh }));
+    };
+    ukur();
+    window.addEventListener("resize", ukur);
+    window.addEventListener("orientationchange", ukur);
+    return () => {
+      window.removeEventListener("resize", ukur);
+      window.removeEventListener("orientationchange", ukur);
+    };
+  }, []);
+  return {
+    ...tata,
+    baring: tata.bentuk === "hp-baring",
+    hp: tata.bentuk !== "lebar",
+  };
+}
+
 export default function PlayPage() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<ReturnType<typeof createGame> | null>(null);
   const padRef = useRef<HTMLDivElement>(null);
+  const knobRef = useRef<HTMLDivElement>(null);
+  const tata = useTataLetak();
   const [stars, setStars] = useState({ got: 0, total: 24 });
   const [time, setTime] = useState<string>("Pagi");
   const [riding, setRiding] = useState(false);
@@ -112,50 +163,59 @@ export default function PlayPage() {
   const [showPet, setShowPet] = useState(false);
   const [showTutor, setShowTutor] = useState(false);
   const [tutorStep, setTutorStep] = useState(0);
+  const [miringDitutup, setMiringDitutup] = useState(false);
+  const [stikDipegang, setStikDipegang] = useState(false);
+  // Mutu grafis pilihan pemain. Dibaca dari perangkat ini, bukan dari server —
+  // laptop kakak dan HP adik boleh beda tanpa saling mengganggu.
+  const [kualitas, setKualitas] = useState<Kualitas>("auto");
+  const [diagnosa, setDiagnosa] = useState<
+    { fps: number; ms: number; jaringan: number | null; basis: number | null } | null
+  >(null);
+  useEffect(() => {
+    try {
+      const k = localStorage.getItem("kubantara_kualitas") as Kualitas | null;
+      if (k && KUALITAS.some((x) => x.id === k)) setKualitas(k);
+    } catch { /* penyimpanan diblokir; pakai otomatis saja */ }
+  }, []);
+  const pilihKualitas = useCallback((k: Kualitas) => {
+    setKualitas(k);
+    try { localStorage.setItem("kubantara_kualitas", k); } catch {}
+  }, []);
 
   // — resin (gratis, isi ulang otomatis) & dungeon gua —
+  // Angkanya milik server; di sini hanya cerminannya. Dulu tersimpan di
+  // localStorage, sehingga siapa pun yang membuka konsol peramban bisa
+  // memberi dirinya seribu keping dan memborong toko.
   const [resin, setResin] = useState(RESIN_MAX);
-  const resinBaseRef = useRef(RESIN_MAX);   // nilai resin pasti pada resinTsRef
-  const resinTsRef = useRef(Date.now());
   const [keping, setKeping] = useState(0);  // keping kristal: hadiah dungeon, mata uang toko skin
+  const babakRef = useRef<string | null>(null); // babak dungeon yang sedang berjalan
   const showToastRef = useRef<((m: string) => void) | null>(null);
   const [dungeon, setDungeon] = useState<{
     near: number | null; inside: number | null; unlocked: boolean; collected: number; total: number;
   } | null>(null);
 
-  const persistResin = useCallback(() => {
-    try { localStorage.setItem("kubantara_resin", JSON.stringify({ v: resinBaseRef.current, t: resinTsRef.current })); } catch {}
+  // Menerima gambaran dompet terbaru dari server.
+  const pasangDompet = useCallback((d: { resin?: number; keping?: number } | null) => {
+    if (!d) return;
+    if (typeof d.resin === "number") setResin(d.resin);
+    if (typeof d.keping === "number") setKeping(d.keping);
   }, []);
-  const currentResin = useCallback(() => {
-    const gained = Math.floor((Date.now() - resinTsRef.current) / RESIN_REGEN_MS);
-    return Math.min(RESIN_MAX, resinBaseRef.current + gained);
-  }, []);
-  const spendResin = useCallback((n: number) => {
-    const cur = currentResin();
-    if (cur < n) return false;
-    resinBaseRef.current = cur - n;
-    resinTsRef.current = Date.now();
-    persistResin();
-    setResin(resinBaseRef.current);
-    return true;
-  }, [currentResin, persistResin]);
 
-  // muat resin & keping tersimpan, lalu detak tiap detik untuk isi ulang gratis
+  // Tanya dompet ke server saat masuk, lalu sesekali supaya isi ulang resin yang
+  // gratis itu terlihat bertambah. Jedanya semenit — persis satu resin — jadi
+  // tidak ada permintaan yang mubazir.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("kubantara_resin");
-      if (raw) { const o = JSON.parse(raw); resinBaseRef.current = Math.min(RESIN_MAX, Number(o.v) || RESIN_MAX); resinTsRef.current = Number(o.t) || Date.now(); }
-      const k = Number(localStorage.getItem("kubantara_keping")); if (Number.isFinite(k)) setKeping(k);
-    } catch {}
-    const tick = () => {
-      const cur = currentResin();
-      if (cur >= RESIN_MAX) { resinBaseRef.current = RESIN_MAX; resinTsRef.current = Date.now(); }
-      setResin(cur);
+    let hidup = true;
+    const muat = async () => {
+      try {
+        const d = await fetch("/api/dompet", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null));
+        if (hidup) pasangDompet(d);
+      } catch { /* jaringan sedang buruk; angka lama tetap ditampilkan */ }
     };
-    tick();
-    const iv = setInterval(tick, 1000);
-    return () => clearInterval(iv);
-  }, [currentResin]);
+    muat();
+    const iv = setInterval(muat, RESIN_REGEN_MS);
+    return () => { hidup = false; clearInterval(iv); };
+  }, [pasangDompet]);
 
   // — toko skin on-chain —
   const [showShop, setShowShop] = useState(false);
@@ -187,21 +247,34 @@ export default function PlayPage() {
       });
       const d = await res.json().catch(() => null);
       if (!res.ok) { showToastRef.current?.(d?.error ?? "Gagal membeli"); return; }
-      const nk = keping - s.price;
-      setKeping(nk); try { localStorage.setItem("kubantara_keping", String(nk)); } catch {}
+      pasangDompet(d); // saldo sesudah bayar datang dari server, bukan dikurangi sendiri
       setSkinData((prev) => prev ? { ...prev, owned: [...prev.owned, s.id] } : prev);
       pakaiSkin(s);
       showToastRef.current?.(`Berhasil! ${s.name} tercatat di Solana devnet ✅`);
     } finally { setBuyingSkin(null); }
-  }, [keping, skinData, pakaiSkin]);
+  }, [keping, skinData, pakaiSkin, pasangDompet]);
 
-  const masukDungeon = useCallback(() => {
+  // Server yang memotong resin dan membuka babak. Pintu dungeon baru dibuka
+  // setelah server mengiyakan, supaya anak tak pernah melihat dungeon terbuka
+  // padahal resinnya ternyata tidak cukup.
+  const masukDungeon = useCallback(async () => {
     const g = gameRef.current;
     if (!g || !dungeon || dungeon.near === null || dungeon.unlocked) return;
-    if (!spendResin(DUNGEON_COST)) { showToastRef.current?.(`Resin belum cukup (butuh ${DUNGEON_COST}⚡). Tunggu isi ulang gratis.`); return; }
-    g.unlockDungeon(dungeon.near);
-    showToastRef.current?.("Dungeon terbuka! Kumpulkan semua kristalnya ✨");
-  }, [dungeon, spendResin]);
+    try {
+      const res = await fetch("/api/dompet", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aksi: "masuk-dungeon" }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) { showToastRef.current?.(d?.error ?? "Belum bisa masuk dungeon"); return; }
+      babakRef.current = d.babakId;
+      pasangDompet(d);
+      g.unlockDungeon(dungeon.near);
+      showToastRef.current?.("Dungeon terbuka! Kumpulkan semua kristalnya ✨");
+    } catch {
+      showToastRef.current?.("Jaringan sedang bermasalah. Coba sebentar lagi.");
+    }
+  }, [dungeon, pasangDompet]);
 
   // tampilkan sambutan hanya sekali per perangkat
   useEffect(() => {
@@ -317,8 +390,12 @@ export default function PlayPage() {
   }, [showToast]);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
-    const game = createGame(canvasRef.current, {
+    const host = hostRef.current;
+    if (!host) return;
+    const canvas = document.createElement("canvas");
+    canvas.className = "h-full w-full touch-none block";
+    host.appendChild(canvas);
+    const game = createGame(canvas, {
       onStars: (got, total) => {
         setStars({ got, total });
         starsRef.current = got;
@@ -340,12 +417,29 @@ export default function PlayPage() {
       onDungeon: (d) => {
         setDungeon(d);
         if (d.justCleared) {
-          setKeping((k) => { const nk = k + 3; try { localStorage.setItem("kubantara_keping", String(nk)); } catch {} return nk; });
-          showToastRef.current?.("Dungeon selesai! +3 keping kristal ✨");
+          // Hadiahnya diberikan server, dengan menunjuk babak yang tadi dibuka.
+          const babak = babakRef.current;
+          babakRef.current = null;
+          if (!babak) return;
+          fetch("/api/dompet", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ aksi: "selesai-dungeon", babakId: babak }),
+          })
+            .then((r) => r.json())
+            .then((h) => {
+              if (!h?.ok) return;
+              setKeping(h.keping);
+              setResin(h.resin);
+              showToastRef.current?.(`Dungeon selesai! +${h.hadiah} keping kristal ✨`);
+            })
+            .catch(() => {});
         }
       },
-    });
+    }, { kualitas });
     gameRef.current = game;
+    // Pegangan untuk uji otomatis (uji-kendali.mjs). Tidak ada rahasia di sini —
+    // seluruh isinya sudah berjalan di peramban anak.
+    (window as unknown as { __kubantara?: unknown }).__kubantara = game;
 
     // muat profil dan progres tersimpan
     (async () => {
@@ -423,47 +517,157 @@ export default function PlayPage() {
       window.removeEventListener("pagehide", onHide);
       music.stop();
       game.dispose();
+      canvas.remove();
     };
-  }, [checkAchievements, save]);
+    // `kualitas` ikut jadi kebergantungan: mengganti mutu memasang ulang mesin
+    // dengan kanvas baru, sehingga pilihan yang butuh dibangun ulang (anti-alias,
+    // kerapatan air, jumlah awan) benar-benar berlaku — bukan cuma label.
+  }, [checkAchievements, save, kualitas]);
+
+  // Diagnostik jujur: FPS sungguhan dari gelung gambar, dan waktu pulang-pergi
+  // sungguhan ke server. Dipakai untuk menjawab pertanyaan "berapa latency-nya"
+  // dengan angka, bukan klaim.
+  useEffect(() => {
+    if (!showSettings) return;
+    let hidup = true;
+    const ukur = async () => {
+      const k = gameRef.current?.kinerja();
+      // Dua ukuran berbeda, sengaja dipisah: /api/ping tidak menyentuh database
+      // sama sekali (murni jaringan + server), sedangkan /api/dompet menanyakan
+      // database. Kalau yang kedua jauh lebih besar, yang lambat adalah database
+      // — bukan koneksi si anak.
+      let jaringan: number | null = null;
+      let basis: number | null = null;
+      try {
+        const t0 = performance.now();
+        await fetch("/api/ping", { cache: "no-store" });
+        jaringan = performance.now() - t0;
+      } catch { /* jaringan putus; tampilkan tanda hubung */ }
+      try {
+        const t1 = performance.now();
+        await fetch("/api/dompet", { cache: "no-store" });
+        basis = performance.now() - t1;
+      } catch { /* biarkan kosong */ }
+      if (hidup && k) setDiagnosa({ fps: k.fps, ms: k.msPerBingkai, jaringan, basis });
+    };
+    ukur();
+    const iv = setInterval(ukur, 2000);
+    return () => { hidup = false; clearInterval(iv); };
+  }, [showSettings]);
 
   const toggleMusic = useCallback(() => {
     if (music.playing) { music.stop(); setMusicOn(false); }
     else { music.start(); setMusicOn(true); }
   }, []);
 
-  // joystick sentuh
+  // Satu pintu untuk semua aksi: tombol layar, pintasan papan ketik, dan nanti
+  // stik gim kalau ada. Tidak ada logika yang hanya hidup di dalam onClick.
+  const jalankanAksi = useCallback((a: Aksi) => {
+    const g = gameRef.current;
+    if (!g) return;
+    if (a === "bangun") { g.place(); return; }
+    if (a === "bongkar") { g.removeBlock(); return; }
+    if (a === "cetakan") { setShowBuild((v) => !v); return; }
+    if (a === "tunggang") { g.toggleRide(); return; }
+    const ok = g.tameNearest();
+    showToastRef.current?.(ok ? "Satwa jadi sahabatmu! ❤️" : "Dekati dulu satwanya, lalu coba lagi");
+  }, []);
+
+  const lompat = useCallback(() => {
+    if (gameRef.current) gameRef.current.touch.jump = true;
+  }, []);
+
+  // Pintasan papan ketik untuk tiap tombol aksi.
+  useEffect(() => {
+    const tekan = (e: KeyboardEvent) => {
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const a = AKSI.find((x) => x.tombol === e.key.toLowerCase());
+      if (a) { e.preventDefault(); jalankanAksi(a.id); }
+    };
+    window.addEventListener("keydown", tekan);
+    return () => window.removeEventListener("keydown", tekan);
+  }, [jalankanAksi]);
+
+  // Stik analog.
+  //
+  // Versi lama memakai TouchEvent.touches[0] — jari *pertama* di layar, siapa pun
+  // dia. Begitu anak menahan stik lalu menekan LOMPAT, jari kedua itu jadi
+  // touches[0] pada peristiwa berikutnya dan stik melompat mengikuti ibu jari
+  // kanan. Itu sebabnya penguji melaporkan tombol "tidak terintegrasi": tombol
+  // bekerja, tapi menekannya membajak arah jalan.
+  //
+  // Sekarang memakai Pointer Events dan mengunci satu pointerId. Sekalian
+  // menyatukan tetikus, pena, dan sentuh — di desktop stik ini bisa diseret
+  // dengan mouse, bukan hanya jadi hiasan.
   useEffect(() => {
     const pad = padRef.current;
     if (!pad) return;
-    let active = false;
-    const center = { x: 0, y: 0 };
-    const set = (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (!t || !gameRef.current) return;
-      const dx = (t.clientX - center.x) / 45;
-      const dy = (t.clientY - center.y) / 45;
-      gameRef.current.touch.x = Math.max(-1, Math.min(1, dx));
-      gameRef.current.touch.y = Math.max(-1, Math.min(1, dy));
+
+    const JARI = 52;      // jarak (px) dari pusat sampai simpangan penuh
+    const MATI = 0.14;    // zona mati: jari diam tak boleh membuat pemain merayap
+    let idJari: number | null = null;
+    const pusat = { x: 0, y: 0 };
+
+    const gambarKnop = (kx: number, ky: number) => {
+      const knop = knobRef.current;
+      if (knop) knop.style.transform = `translate(calc(-50% + ${kx * JARI}px), calc(-50% + ${ky * JARI}px))`;
     };
-    const start = (e: TouchEvent) => {
+
+    const arahkan = (e: PointerEvent) => {
+      const g = gameRef.current;
+      if (!g) return;
+      let dx = (e.clientX - pusat.x) / JARI;
+      let dy = (e.clientY - pusat.y) / JARI;
+      const jauh = Math.hypot(dx, dy);
+      if (jauh > 1) { dx /= jauh; dy /= jauh; }        // tahan di lingkaran, bukan kotak
+      if (jauh < MATI) { dx = 0; dy = 0; }
+      gambarKnop(dx, dy);
+      g.touch.x = dx;
+      // Layar menghitung y ke bawah; permainan menghitung "maju" ke atas.
+      // Membalik di sini sekali, supaya mesin permainan tak perlu tahu soal layar.
+      g.touch.y = -dy;
+    };
+
+    const mulai = (e: PointerEvent) => {
+      if (idJari !== null) return;                     // satu jari saja yang memegang stik
+      idJari = e.pointerId;
+      setStikDipegang(true);
+      pad.setPointerCapture(e.pointerId);              // jari boleh keluar dari lingkaran
       const r = pad.getBoundingClientRect();
-      center.x = r.left + r.width / 2;
-      center.y = r.top + r.height / 2;
-      active = true;
-      set(e);
+      pusat.x = r.left + r.width / 2;
+      pusat.y = r.top + r.height / 2;
+      e.preventDefault();
+      arahkan(e);
     };
-    const end = () => {
-      active = false;
+    const geser = (e: PointerEvent) => { if (e.pointerId === idJari) { e.preventDefault(); arahkan(e); } };
+    const berhenti = () => {
+      idJari = null;
+      setStikDipegang(false);
+      gambarKnop(0, 0);
       if (gameRef.current) { gameRef.current.touch.x = 0; gameRef.current.touch.y = 0; }
     };
-    const move = (e: TouchEvent) => active && set(e);
-    pad.addEventListener("touchstart", start);
-    pad.addEventListener("touchmove", move);
-    pad.addEventListener("touchend", end);
+    const lepas = (e: PointerEvent) => {
+      if (e.pointerId !== idJari) return;
+      if (pad.hasPointerCapture(e.pointerId)) pad.releasePointerCapture(e.pointerId);
+      berhenti();
+    };
+
+    pad.addEventListener("pointerdown", mulai);
+    pad.addEventListener("pointermove", geser);
+    pad.addEventListener("pointerup", lepas);
+    pad.addEventListener("pointercancel", lepas);
+    // Jika jendela kehilangan fokus (anak pindah tab) pemain harus berhenti,
+    // bukan berjalan terus menembus pulau.
+    window.addEventListener("blur", berhenti);
     return () => {
-      pad.removeEventListener("touchstart", start);
-      pad.removeEventListener("touchmove", move);
-      pad.removeEventListener("touchend", end);
+      pad.removeEventListener("pointerdown", mulai);
+      pad.removeEventListener("pointermove", geser);
+      pad.removeEventListener("pointerup", lepas);
+      pad.removeEventListener("pointercancel", lepas);
+      window.removeEventListener("blur", berhenti);
+      if (gameRef.current) { gameRef.current.touch.x = 0; gameRef.current.touch.y = 0; }
     };
   }, []);
 
@@ -488,7 +692,10 @@ export default function PlayPage() {
 
   return (
     <main className="fixed inset-0 select-none overflow-hidden bg-sky-300">
-      <canvas ref={canvasRef} className="h-full w-full touch-none" />
+      {/* Canvas dibuat oleh efek di bawah, bukan oleh React. Sekali sebuah canvas
+          dipakai WebGL lalu renderer-nya dibuang, konteksnya tak bisa dipakai lagi —
+          jadi tiap kali permainan dimulai ulang kita pasang canvas yang benar-benar baru. */}
+      <div ref={hostRef} className="h-full w-full touch-none" />
 
       {/* Ajakan / progres dungeon gua */}
       {dungeon && (dungeon.near !== null || dungeon.inside !== null) && (
@@ -572,6 +779,8 @@ export default function PlayPage() {
         )}
         <button
           onClick={toggleMusic}
+          aria-label={musicOn ? "Matikan musik" : "Nyalakan musik"}
+          aria-pressed={musicOn}
           className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-violet-700 shadow sm:px-3 sm:py-2 sm:text-sm"
         >
           {musicOn ? "🎵" : "🔇"}
@@ -579,6 +788,8 @@ export default function PlayPage() {
         <button
           onClick={toggleFullscreen}
           title="Layar penuh"
+          aria-label="Layar penuh"
+          aria-pressed={isFull}
           className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-slate-700 shadow sm:px-3 sm:py-2 sm:text-sm"
         >
           {isFull ? "🗗" : "⛶"}
@@ -586,6 +797,8 @@ export default function PlayPage() {
         <button
           onClick={() => setFreeLook(gameRef.current?.toggleFreeLook() ?? false)}
           title="Lihat bebas dengan mouse"
+          aria-label="Lihat bebas dengan mouse"
+          aria-pressed={freeLook}
           className={`pointer-events-auto rounded-xl px-2.5 py-1.5 text-xs font-bold shadow sm:px-3 sm:py-2 sm:text-sm ${
             freeLook ? "bg-emerald-500 text-white" : "bg-white/85 text-slate-700"
           }`}
@@ -595,6 +808,8 @@ export default function PlayPage() {
         <button
           onClick={() => setShowPet((v) => !v)}
           title="Peliharaan & jalan pintas"
+          aria-label="Peliharaan dan jalan pintas"
+          aria-expanded={showPet}
           className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-pink-600 shadow sm:px-3 sm:py-2 sm:text-sm"
         >
           🐾
@@ -602,6 +817,8 @@ export default function PlayPage() {
         <button
           onClick={() => { setShowShop((v) => !v); if (!skinData) muatSkin(); }}
           title="Toko skin (bukti di Solana devnet)"
+          aria-label="Toko skin"
+          aria-expanded={showShop}
           className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-violet-600 shadow sm:px-3 sm:py-2 sm:text-sm"
         >
           🛍️
@@ -609,6 +826,8 @@ export default function PlayPage() {
         <button
           onClick={() => setShowSettings((v) => !v)}
           title="Pengaturan"
+          aria-label="Pengaturan"
+          aria-expanded={showSettings}
           className="pointer-events-auto rounded-xl bg-white/85 px-2.5 py-1.5 text-xs font-bold text-slate-700 shadow sm:px-3 sm:py-2 sm:text-sm"
         >
           ⚙️
@@ -640,9 +859,24 @@ export default function PlayPage() {
         )}
       </div>
 
-      <div className="pointer-events-none absolute right-3 top-3 hidden max-w-[220px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
-        WASD jalan · Spasi lompat · seret mouse untuk melihat sekeliling · scroll untuk zoom. Pilih warna lalu tekan Bangun untuk menaruh balok di depanmu.
-      </div>
+      {!tata.hp && (
+        <div className="pointer-events-none absolute right-3 top-3 hidden max-w-[230px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
+          <b>WASD</b> jalan · <b>Spasi</b> lompat · seret mouse untuk melihat sekeliling · scroll zoom.
+          <br />
+          <b>F</b> bangun · <b>R</b> bongkar · <b>B</b> cetakan · <b>T</b> jinakkan · <b>G</b> naik.
+        </div>
+      )}
+
+      {/* Ajakan memiringkan HP. Muncul sekali saja, hanya di layar sentuh yang
+          sempit & tegak, dan bisa ditutup — bukan dinding yang memblokir main. */}
+      {tata.sentuh && tata.bentuk === "hp-tegak" && !miringDitutup && (
+        <button
+          onClick={() => setMiringDitutup(true)}
+          className="absolute bottom-52 left-1/2 z-30 -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
+        >
+          📱↻ Miringkan HP-mu — pulaunya jadi lebih lebar (ketuk untuk menutup)
+        </button>
+      )}
 
       {/* Panel pilih pahlawan */}
       {showHeroes && profile && (
@@ -723,7 +957,11 @@ export default function PlayPage() {
 
       {/* Dialog NPC */}
       {npc && (
-        <div className="pointer-events-none absolute bottom-44 left-1/2 z-20 w-[min(90vw,28rem)] -translate-x-1/2 rounded-2xl bg-slate-900/90 p-4 text-white shadow-xl">
+        <div
+          className={`pointer-events-none absolute left-1/2 z-20 w-[min(90vw,28rem)] -translate-x-1/2 rounded-2xl bg-slate-900/90 text-white shadow-xl ${
+            tata.baring ? "bottom-24 p-2.5" : "bottom-44 p-4"
+          }`}
+        >
           <p className="text-sm font-black text-amber-300">{npc.name}</p>
           <p className="mt-1 text-sm leading-relaxed">{npc.line}</p>
         </div>
@@ -731,27 +969,45 @@ export default function PlayPage() {
 
       {/* Palet warna balok — turun ke bawah bar atas di layar sempit
           supaya tidak bertabrakan dengan chip status. */}
-      <div className="absolute left-1/2 top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5">
+      {/* Dimiringkan, palet pindah ke tepi kanan sebagai kisi 2 lajur: bar status
+          atas sudah membungkus jadi beberapa baris di layar pendek dan akan
+          menimpanya kalau palet tetap di atas. */}
+      <div
+        className={
+          tata.baring
+            ? "absolute right-3 top-1/2 grid -translate-y-1/2 grid-cols-2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow"
+            : "absolute left-1/2 top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5"
+        }
+      >
         {PALETTE.map((p, i) => (
           <button
             key={p.name}
             onClick={() => pickColor(i)}
             title={p.name}
-            className={`h-7 w-7 rounded-lg border-2 transition-transform hover:scale-110 sm:h-8 sm:w-8 ${
-              colorIdx === i ? "border-slate-900 scale-110" : "border-white/60"
-            }`}
+            className={`rounded-lg border-2 transition-transform hover:scale-110 ${
+              tata.baring ? "h-6 w-6" : "h-7 w-7 sm:h-8 sm:w-8"
+            } ${colorIdx === i ? "border-slate-900 scale-110" : "border-white/60"}`}
             style={{ backgroundColor: `#${p.hex.toString(16).padStart(6, "0")}` }}
           />
         ))}
       </div>
 
-      {/* Panel sihir (kiri tengah) */}
-      <div className="absolute left-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
+      {/* Panel sihir. Tegak/laptop: kolom di kiri tengah. Dimiringkan: satu baris
+          rapat tepat di atas stik, supaya tidak menimpa pemandangan. */}
+      <div
+        className={
+          tata.baring
+            ? "absolute bottom-14 left-1/2 z-10 flex -translate-x-1/2 gap-1"
+            : "absolute left-3 top-1/2 flex -translate-y-1/2 flex-col gap-2"
+        }
+      >
         {SPELLS.map((s) => (
           <button
             key={s.id}
             onClick={() => gameRef.current?.cast(s.id)}
-            className="rounded-xl bg-violet-500/90 px-3 py-2 text-xs font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+            className={`rounded-xl bg-violet-500/90 font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
+              tata.baring ? "px-2 py-1 text-[10px]" : "px-3 py-2 text-xs"
+            }`}
           >
             {s.label}
           </button>
@@ -761,7 +1017,11 @@ export default function PlayPage() {
       {/* Laci cetakan bangunan — ditutup secara bawaan supaya tidak menutupi
           joystick di layar HP yang sempit. */}
       {showBuild && (
-        <div className="absolute bottom-44 left-1/2 z-20 w-[min(92vw,22rem)] -translate-x-1/2 rounded-2xl bg-white/95 p-3 shadow-xl">
+        <div
+          className={`absolute left-1/2 z-20 w-[min(92vw,22rem)] -translate-x-1/2 overflow-y-auto rounded-2xl bg-white/95 p-3 shadow-xl ${
+            tata.baring ? "bottom-24 max-h-[52vh]" : "bottom-44 max-h-[60vh]"
+          }`}
+        >
           <p className="mb-2 text-xs font-black text-slate-800">Bangun jadi sekali tekan</p>
           <div className="grid grid-cols-2 gap-1.5">
             {BLUEPRINTS.map((b) => (
@@ -795,64 +1055,79 @@ export default function PlayPage() {
         </div>
       )}
 
-      {/* Aksi bangun / bongkar / tunggang (kanan) */}
-      <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
-        <button
-          onClick={() => gameRef.current?.place()}
-          className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
-        >
-          Bangun
-        </button>
-        <button
-          onClick={() => setShowBuild((v) => !v)}
-          className={`rounded-xl px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
-            showBuild ? "bg-sky-700" : "bg-sky-500"
-          }`}
-        >
-          {showBuild ? "Tutup" : "Cetakan"}
-        </button>
-        <button
-          onClick={() => gameRef.current?.removeBlock()}
-          className="rounded-xl bg-rose-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
-        >
-          Bongkar
-        </button>
-        <button
-          onClick={() => {
-            const ok = gameRef.current?.tameNearest();
-            showToast(ok ? "Satwa jadi sahabatmu! ❤️" : "Dekati dulu satwanya, lalu coba lagi");
-          }}
-          className="rounded-xl bg-pink-500 px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
-        >
-          Jinakkan
-        </button>
-        <button
-          onClick={() => gameRef.current?.toggleRide()}
-          className={`rounded-xl px-4 py-3 text-sm font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
-            riding ? "bg-amber-600" : "bg-amber-500"
-          }`}
-        >
-          {riding ? "Turun" : "Naik"}
-        </button>
+      {/* Aksi bangun / bongkar / tunggang. Tiap tombol menyebut pintasan papan
+          ketiknya, supaya anak yang main di laptop tidak perlu menebak. */}
+      <div
+        className={
+          tata.baring
+            ? "absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1"
+            : "absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2"
+        }
+      >
+        {AKSI.map((a) => {
+          const nyala = a.id === "cetakan" ? showBuild : a.id === "tunggang" ? riding : false;
+          return (
+            <button
+              key={a.id}
+              onClick={() => jalankanAksi(a.id)}
+              title={`${a.label} (tombol ${a.tombol.toUpperCase()})`}
+              className={`rounded-xl font-black text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
+                tata.baring ? "px-2 py-1.5 text-[10px]" : "px-4 py-3 text-sm"
+              } ${nyala ? a.warnaNyala : a.warna}`}
+            >
+              {a.id === "cetakan" && showBuild ? "Tutup" : a.id === "tunggang" && riding ? "Turun" : a.label}
+              {!tata.hp && <span className="ml-1 opacity-60">{a.tombol.toUpperCase()}</span>}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Kontrol sentuh gerak */}
+      {/* Stik jalan. Ukurannya mengecil saat HP dimiringkan supaya tidak menelan
+          layar yang sudah pendek. Knop di dalamnya benar-benar mengikuti jari —
+          tanpa itu anak tidak tahu stiknya sudah terpegang atau belum. */}
       <div
         ref={padRef}
-        className="absolute bottom-8 left-6 h-32 w-32 touch-none rounded-full border-4 border-white/60 bg-white/25"
+        data-uji="stik"
+        aria-label="Stik jalan"
+        // z-30: laci cetakan & panel lain memakai z-20 dan dulu menimbun stik,
+        // sehingga di HP kendalinya seolah "tidak pernah muncul".
+        className={`absolute z-30 touch-none rounded-full border-4 border-white/60 bg-white/25 transition-colors ${
+          stikDipegang ? "border-white/90 bg-white/40" : ""
+        } ${tata.baring ? "bottom-3 left-3 h-28 w-28" : "bottom-8 left-6 h-32 w-32"}`}
       >
-        <div className="absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/70" />
+        <div
+          ref={knobRef}
+          data-uji="knop"
+          className={`pointer-events-none absolute left-1/2 top-1/2 h-12 w-12 rounded-full bg-white/80 shadow-md ${
+            // Saat dipegang, knop harus menempel di jari tanpa jeda. Saat dilepas,
+            // ia meluncur pulang ke tengah — itu yang membuat stiknya terasa hidup.
+            stikDipegang ? "" : "transition-transform duration-200 ease-out"
+          }`}
+          style={{ transform: "translate(-50%, -50%)" }}
+        />
       </div>
       <button
-        className="absolute bottom-10 right-6 h-24 w-24 rounded-full border-4 border-white/60 bg-sky-400/80 text-base font-black text-white shadow-lg"
-        onTouchStart={(e) => { e.preventDefault(); if (gameRef.current) gameRef.current.touch.jump = true; }}
+        type="button"
+        data-uji="lompat"
+        aria-label="Lompat"
+        className={`absolute z-30 touch-none rounded-full border-4 border-white/60 bg-sky-400/80 font-black text-white shadow-lg transition-transform duration-100 active:scale-90 active:bg-sky-500 ${
+          tata.baring ? "bottom-3 right-3 h-20 w-20 text-xs" : "bottom-10 right-6 h-24 w-24 text-base"
+        }`}
+        // pointerdown, bukan touchstart/click: satu jalur untuk jari, tetikus, dan
+        // pena, dan lompatnya terjadi saat ditekan — bukan saat dilepas.
+        onPointerDown={(e) => { e.preventDefault(); lompat(); }}
       >
         LOMPAT
       </button>
 
       {/* Toast pencapaian */}
       {toast && (
-        <div key={toast} className="anim-pop pointer-events-none absolute bottom-64 left-1/2 max-w-[86vw] -translate-x-1/2 rounded-2xl bg-slate-900/90 px-5 py-3 text-center text-sm font-bold text-amber-300 shadow-xl">
+        <div
+          key={toast}
+          className={`anim-pop pointer-events-none absolute left-1/2 z-30 max-w-[86vw] -translate-x-1/2 rounded-2xl bg-slate-900/90 px-5 py-3 text-center text-sm font-bold text-amber-300 shadow-xl ${
+            tata.baring ? "top-14" : "bottom-64"
+          }`}
+        >
           {toast}
         </div>
       )}
@@ -917,21 +1192,39 @@ export default function PlayPage() {
               const busy = buyingSkin === s.id;
               return (
                 <div key={s.id} className="flex items-center gap-2 rounded-xl border border-slate-200 p-2">
+                  {/* Baju di atas, celana di bawah — seperti yang akan dipakai
+                      karakternya. Dulu hanya warna baju yang terlihat, jadi anak
+                      memilih skin tanpa tahu setengah tampilannya. */}
                   <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg"
-                    style={{ background: `#${s.shirt.toString(16).padStart(6, "0")}` }}
+                    className="flex h-9 w-9 shrink-0 flex-col overflow-hidden rounded-lg"
+                    aria-label={`Baju dan celana ${s.name}`}
                   >
-                    {s.emoji}
+                    <span
+                      className="flex flex-1 items-center justify-center text-sm"
+                      style={{ background: `#${s.shirt.toString(16).padStart(6, "0")}` }}
+                    >
+                      {s.emoji}
+                    </span>
+                    <span
+                      className="h-3 w-full"
+                      style={{ background: `#${s.pants.toString(16).padStart(6, "0")}` }}
+                    />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-black text-slate-800">{s.name}</p>
-                    {s.mintExplorer ? (
-                      <a href={s.mintExplorer} target="_blank" rel="noreferrer" className="text-[10px] text-cyan-600 hover:underline">
-                        lihat di Explorer ↗
-                      </a>
-                    ) : (
-                      <span className="text-[10px] text-slate-400">💎 {s.price}</span>
-                    )}
+                    {/* Harga selalu terlihat. Dulu ia digantikan tautan Explorer,
+                        sehingga skin yang mint-nya sudah dibuat tampak tanpa harga. */}
+                    <p className="text-[10px] text-slate-400">
+                      💎 {s.price}
+                      {s.mintExplorer && (
+                        <>
+                          {" · "}
+                          <a href={s.mintExplorer} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline">
+                            Explorer ↗
+                          </a>
+                        </>
+                      )}
+                    </p>
                   </div>
                   <button
                     onClick={() => beliSkin(s)}
@@ -953,7 +1246,7 @@ export default function PlayPage() {
       {showSettings && (
         <div className="absolute right-3 top-16 z-30 w-64 rounded-2xl bg-white/95 p-4 shadow-xl">
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm font-black text-slate-800">Pengaturan suara</p>
+            <p className="text-sm font-black text-slate-800">Pengaturan</p>
             <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-700">✕</button>
           </div>
           <label className="block text-xs font-bold text-slate-600">
@@ -980,6 +1273,50 @@ export default function PlayPage() {
               className="mt-1 w-full accent-emerald-500"
             />
           </label>
+
+          <p className="mb-1.5 mt-4 text-xs font-black text-slate-700">🎨 Mutu grafis</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {KUALITAS.map((k) => (
+              <button
+                key={k.id}
+                data-uji={`mutu-${k.id}`}
+                onClick={() => pilihKualitas(k.id)}
+                title={k.catatan}
+                className={`rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors ${
+                  kualitas === k.id ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[10px] leading-snug text-slate-500">
+            Mengganti mutu memuat ulang pemandangan sebentar. Bangunanmu tetap aman.
+          </p>
+
+          {/* Angka apa adanya, supaya pilihan di atas bisa dibuktikan — dan supaya
+              pertanyaan "berapa latency-nya" dijawab ukuran, bukan klaim. */}
+          <p className="mb-1 mt-4 text-xs font-black text-slate-700">📊 Ukuran sebenarnya</p>
+          <div data-uji="diagnosa" className="rounded-lg bg-slate-50 px-2 py-1.5 text-[11px] leading-relaxed text-slate-600">
+            <p>
+              Kelancaran:{" "}
+              <b data-uji="fps">{diagnosa ? diagnosa.fps.toFixed(0) : "…"}</b> FPS
+              {diagnosa && ` (${diagnosa.ms.toFixed(1)} ms per gambar)`}
+            </p>
+            <p>
+              Jaringan ke server:{" "}
+              <b data-uji="latensi">
+                {diagnosa ? (diagnosa.jaringan === null ? "putus" : `${diagnosa.jaringan.toFixed(0)} ms`) : "…"}
+              </b>{" "}
+              pulang-pergi
+            </p>
+            <p>
+              Termasuk baca data:{" "}
+              <b data-uji="latensi-data">
+                {diagnosa ? (diagnosa.basis === null ? "putus" : `${diagnosa.basis.toFixed(0)} ms`) : "…"}
+              </b>
+            </p>
+          </div>
         </div>
       )}
 

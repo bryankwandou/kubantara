@@ -51,6 +51,19 @@ export type Spell = "jembatan" | "bunga" | "kembang-api" | "pohon";
 export type Blueprint = "rumah" | "menara" | "tangga" | "pagar";
 // Bentuk balok yang bisa dipasang anak.
 export type Shape = "kubus" | "kaca" | "lampu" | "setengah";
+
+// Mutu grafis yang bisa dipilih pemain. "auto" = tebak dari perangkatnya.
+export type Kualitas = "auto" | "rendah" | "sedang" | "tinggi";
+export const KUALITAS: { id: Kualitas; label: string; catatan: string }[] = [
+  { id: "auto",   label: "Otomatis", catatan: "menyesuaikan perangkatmu" },
+  { id: "rendah", label: "Rendah",   catatan: "paling lancar, tanpa bayangan" },
+  { id: "sedang", label: "Sedang",   catatan: "seimbang" },
+  { id: "tinggi", label: "Tinggi",   catatan: "paling indah, butuh perangkat kuat" },
+];
+
+export interface GameOptions {
+  kualitas?: Kualitas;
+}
 // Emote aman: hanya lambang tetap, tidak ada teks yang bisa diketik anak.
 export const EMOTES = ["👋", "❤️", "😀", "🎉", "⭐", "👍"] as const;
 export type Emote = (typeof EMOTES)[number];
@@ -108,16 +121,25 @@ export interface Perks {
 // `s` menyusul setelah rilis pertama; simpanan lama tanpa `s` dianggap kubus.
 export interface SavedBlock { x: number; y: number; z: number; c: number; s?: Shape }
 
-export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
-  // Perangkat kelas bawah: inti CPU sedikit atau layar kecil. Turunkan beban
-  // grafis daripada memaksa dan membuat permainan patah-patah.
-  const lowEnd =
+export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: GameOptions = {}) {
+  // Mutu grafis. "auto" menebak dari perangkat seperti dulu; anak (atau orang
+  // tuanya) boleh memaksa Rendah/Sedang/Tinggi lewat Pengaturan. Pilihan ini
+  // nyata: ia mengubah ketajaman, bayangan, jarak pandang, kabut, kerapatan
+  // air, jumlah awan dan rumput — bukan sekadar label di layar.
+  const auto =
     (navigator.hardwareConcurrency ?? 4) <= 4 ||
     Math.min(window.screen.width, window.screen.height) <= 480;
+  const mutu: Exclude<Kualitas, "auto"> =
+    !opsi.kualitas || opsi.kualitas === "auto" ? (auto ? "rendah" : "tinggi") : opsi.kualitas;
+  const lowEnd = mutu === "rendah";
+  const sedang = mutu === "sedang";
+  // pengali ketajaman & jarak pandang per tingkat
+  const tajam = lowEnd ? 1.25 : sedang ? 1.5 : 2;
+  const jauh = lowEnd ? 0.65 : sedang ? 0.85 : 1;
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowEnd ? 1.25 : 2));
-  renderer.shadowMap.enabled = true;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, tajam));
+  renderer.shadowMap.enabled = !lowEnd;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   // Warna & pencahayaan lebih nyata: ruang warna sRGB + tone mapping sinema
   // membuat cahaya matahari terasa hangat, bukan datar & pucat.
@@ -132,14 +154,14 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   scene.background = skyDay.clone();
   // jarak pandang lebih pendek di perangkat lemah: kabut menutup batasnya
   // sehingga tidak terlihat seperti dunia yang terpotong
-  scene.fog = new THREE.Fog(skyDay.getHex(), lowEnd ? 45 : 70, lowEnd ? 105 : 165);
+  scene.fog = new THREE.Fog(skyDay.getHex(), 70 * jauh, 165 * jauh);
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, lowEnd ? 220 : 500);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 500 * jauh);
 
   // ---------- cahaya ----------
   const sun = new THREE.DirectionalLight(0xfff4d6, 2.2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(lowEnd ? 1024 : 2048, lowEnd ? 1024 : 2048);
+  sun.shadow.mapSize.set(lowEnd ? 512 : sedang ? 1024 : 2048, lowEnd ? 512 : sedang ? 1024 : 2048);
   const scam = sun.shadow.camera as THREE.OrthographicCamera;
   scam.left = -80; scam.right = 80; scam.top = 80; scam.bottom = -80;
   const ambient = new THREE.AmbientLight(0xbfd9ff, 0.9);
@@ -191,6 +213,20 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const m = new THREE.Matrix4();
   const put = (l: Layer, x: number, y: number, z: number) =>
     l.cells.push(m.clone().setPosition(x, y, z));
+
+  // Sel batu yang benar-benar padat (cangkang gua). Tabrakan di dunia ini
+  // berbasis peta ketinggian, yang tidak mengenal rongga — sehingga dinding gua
+  // dulu bisa ditembus dari segala arah dan "masuk gua" tidak terasa seperti
+  // masuk ke mana-mana. Sel-sel ini diperiksa terpisah saat pemain berjalan.
+  const batuPadat = new Set<string>();
+  const padatKey = (x: number, y: number, z: number) => `${x},${y},${z}`;
+  // Apakah tubuh anak (kaki di y, tinggi ~1.7) menabrak batu padat di (x,z)?
+  function terhalang(x: number, y: number, z: number) {
+    const cx = Math.round(x), cz = Math.round(z);
+    const dari = Math.round(y + 0.15), sampai = Math.round(y + 1.5);
+    for (let cy = dari; cy <= sampai; cy++) if (batuPadat.has(padatKey(cx, cy, cz))) return true;
+    return false;
+  }
 
   for (let x = -HALF; x < HALF; x++) {
     heights[x + HALF] = [];
@@ -299,6 +335,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
           // mulut gua menghadap -z supaya jalur masuknya jelas
           if (dz < -r + 1.6 && Math.abs(dx) <= 1 && dy <= 2) continue;
           put(layers.stone, fx + dx, floor + dy, fz + dz);
+          // cangkangnya padat: satu-satunya jalan masuk adalah mulut gua
+          batuPadat.add(padatKey(fx + dx, floor + dy, fz + dz));
         }
     // batu pijakan menuju mulut gua (terowongan pendek)
     for (let i = 1; i <= 3; i++) put(layers.stone, fx, floor, fz - r - i);
@@ -322,7 +360,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   // ---------- air: permukaan danau & laut ----------
   // Bidang biru tembus pandang setinggi permukaan air. Riak halus dari
   // gelombang vertex membuat danau terasa hidup, bukan sekadar warna datar.
-  const waterGeo = new THREE.PlaneGeometry(WORLD, WORLD, lowEnd ? 24 : 48, lowEnd ? 24 : 48);
+  const waterSeg = lowEnd ? 16 : sedang ? 32 : 48;
+  const waterGeo = new THREE.PlaneGeometry(WORLD, WORLD, waterSeg, waterSeg);
   waterGeo.rotateX(-Math.PI / 2);
   const waterBaseY = new Float32Array(waterGeo.attributes.position.count);
   {
@@ -345,7 +384,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const cloudMat = new THREE.MeshLambertMaterial({
     color: 0xffffff, transparent: true, opacity: 0.85, emissive: 0x9fb4cc, emissiveIntensity: 0.15,
   });
-  for (let i = 0; i < (lowEnd ? 8 : 16); i++) {
+  for (let i = 0; i < (lowEnd ? 6 : sedang ? 11 : 16); i++) {
     const puff = new THREE.Group();
     const n = 3 + Math.floor(hash(i, 71) * 3);
     for (let j = 0; j < n; j++) {
@@ -417,7 +456,19 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     stats[k] += n;
     hooks.onStat?.(stats);
   };
-  const colTop = new Map<string, number>(); // "x,z" -> puncak blok pasang
+  // "x,z" -> daftar tinggi permukaan setiap balok di kolom itu, terurut naik.
+  //
+  // Dulu ini hanya menyimpan satu angka: balok TERTINGGI di kolom. Akibatnya
+  // begitu anak membangun rumah, berjalan ke arahnya langsung menaikkan dia ke
+  // atap — bagian dalam rumah tak pernah bisa dimasuki, dan sebuah balok yang
+  // melayang jadi "lantai palsu" yang menahan pemain di udara. Dengan daftar
+  // penuh, kita bisa memilih permukaan yang benar-benar terjangkau kaki pemain.
+  const colTops = new Map<string, number[]>();
+  // Tinggi permukaan sebuah balok. Kubus 1×1×1 berpusat di y → puncaknya y+0.5.
+  // Balok setengah digambar di y-0.25 dengan tinggi 0.5 → puncaknya tepat y.
+  const permukaan = (b: { y: number; s: Shape }) => (b.s === "setengah" ? b.y : b.y + 0.5);
+  // Setinggi apa anak boleh naik dalam satu langkah tanpa melompat.
+  const LANGKAH = 1.05;
   const tmpColor = new THREE.Color();
 
   // jumlah instance terpakai per bentuk
@@ -463,17 +514,42 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     cellKeys.add(cellKey(x, y, z));
     writeInstance(b);
     flushShapes();
-    const key = `${x},${z}`;
-    colTop.set(key, Math.max(colTop.get(key) ?? -Infinity, y));
+    catatKolom(b);
   }
 
-  const groundAt = (x: number, z: number) => {
+  // Sisipkan permukaan balok ke kolomnya, tetap terurut naik.
+  function catatKolom(b: { x: number; y: number; z: number; s: Shape }) {
+    const key = `${b.x},${b.z}`;
+    const daftar = colTops.get(key);
+    const p = permukaan(b);
+    if (!daftar) { colTops.set(key, [p]); return; }
+    let i = 0;
+    while (i < daftar.length && daftar[i] < p) i++;
+    daftar.splice(i, 0, p);
+  }
+
+  // Permukaan tempat pemain seharusnya berdiri di titik (x,z).
+  //
+  // `dariY` adalah tinggi kaki pemain sekarang. Kita memilih permukaan tertinggi
+  // yang masih terjangkau satu langkah — bukan yang paling tinggi di kolom. Itulah
+  // yang membuat anak bisa masuk ke dalam rumahnya sendiri alih-alih terlempar ke
+  // atap, dan tetap bisa menaiki tangga selangkah demi selangkah.
+  //
+  // Tanpa `dariY` (dipakai satwa & tunggangan) perilakunya seperti dulu: puncak.
+  const groundAt = (x: number, z: number, dariY = Infinity) => {
     const gx = Math.round(x) + HALF, gz = Math.round(z) + HALF;
     if (gx < 0 || gz < 0 || gx >= WORLD || gz >= WORLD) return 20;
     const base = heights[gx][gz] + 0.5;
-    const key = `${Math.round(x)},${Math.round(z)}`;
-    const top = colTop.get(key);
-    return top !== undefined ? Math.max(base, top + 1) : base;
+    const daftar = colTops.get(`${Math.round(x)},${Math.round(z)}`);
+    if (!daftar || daftar.length === 0) return base;
+    const batas = dariY + LANGKAH;
+    let hasil = base;
+    // daftar terurut naik: ambil yang tertinggi tapi masih di bawah batas langkah
+    for (const p of daftar) {
+      if (p > batas) break;
+      if (p > hasil) hasil = p;
+    }
+    return hasil;
   };
 
   // ---------- karakter kotak ----------
@@ -652,7 +728,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   const rainGeo = new THREE.BufferGeometry();
   {
     const pts: number[] = [];
-    for (let i = 0; i < (lowEnd ? 200 : 500); i++)
+    for (let i = 0; i < (lowEnd ? 150 : sedang ? 320 : 500); i++)
       pts.push((Math.random() - 0.5) * 60, Math.random() * 30, (Math.random() - 0.5) * 60);
     rainGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
   }
@@ -849,11 +925,20 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
   }
 
   let raf = 0;
+  // pengukur kelancaran: rata-rata milidetik per bingkai
+  let msBingkai = 0, waktuBingkai = performance.now(), bingkaiTotal = 0;
+  const mulaiUkur = performance.now();
   function frame() {
     raf = requestAnimationFrame(frame);
     const now = performance.now();
     const dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
+    // Rata-rata bergerak waktu satu bingkai. Inilah angka yang benar-benar
+    // menentukan terasa lancar atau patah-patah — bukan latency jaringan.
+    const selang = Math.min(now - waktuBingkai, 500);
+    msBingkai = msBingkai === 0 ? selang : msBingkai * 0.9 + selang * 0.1;
+    waktuBingkai = now;
+    bingkaiTotal++;
     // Waktu game ditumpuk dari dt yang sudah dibatasi, bukan dari jam dinding.
     // Kalau tidak, di laptop lambat anak bergerak pelan tapi malam tetap
     // datang secepat biasanya — dunia terasa tidak adil.
@@ -947,27 +1032,38 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     }
 
     // ----- gerak pemain -----
+    // ix = ke kanan layar, iz = maju menjauhi kamera. Keduanya memakai tanda yang
+    // sama dengan yang dirasakan anak: dorong stik ke atas = maju, ke kanan = kanan.
+    // touch.y sudah dikirim dalam konvensi "atas = +1" oleh lapisan kendali.
     let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + touch.x;
-    let iz = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0) + touch.y;
+    let iz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + touch.y;
     const len = Math.hypot(ix, iz);
     if (len > 1) { ix /= len; iz /= len; }
     const moving = len > 0.15;
     // Kaki Air: melaju lebih kencang saat berdiri di perairan dangkal
-    const onWater = groundAt(player.position.x, player.position.z) <= WATER_LEVEL + 0.5;
+    const onWater = groundAt(player.position.x, player.position.z, player.position.y) <= WATER_LEVEL + 0.5;
     const waterBoost = perks.waterWalk && onWater ? 1.5 : 1;
     const speed = (riding ? 11 : 6) * perks.speedMul * waterBoost;
 
     if (moving) {
-      const a = Math.atan2(ix, iz) + camYaw;
+      // Kamera duduk di player - (sin,cos)*jarak, jadi arah pandang = +(sin,cos)
+      // dan kanan layar = (-cos, sin). Sudut yang memenuhi keduanya:
+      const a = Math.atan2(-ix, iz) + camYaw;
       yaw = a;
       const nx = player.position.x + Math.sin(a) * speed * dt;
       const nz = player.position.z + Math.cos(a) * speed * dt;
-      const g = groundAt(nx, nz);
       const climb = riding ? 2.2 : 1.6;
-      if (g - player.position.y < climb) {
-        player.position.x = THREE.MathUtils.clamp(nx, -HALF + 2, HALF - 2);
-        player.position.z = THREE.MathUtils.clamp(nz, -HALF + 2, HALF - 2);
-      }
+      const bisa = (px: number, pz: number) =>
+        groundAt(px, pz, player.position.y) - player.position.y < climb &&
+        !terhalang(px, player.position.y, pz);
+      // Coba langkah penuh dulu; kalau terhalang, coba satu sumbu saja supaya
+      // anak menyusur dinding gua alih-alih mentok berhenti di sudut.
+      let px = player.position.x, pz = player.position.z;
+      if (bisa(nx, nz)) { px = nx; pz = nz; }
+      else if (bisa(nx, player.position.z)) px = nx;
+      else if (bisa(player.position.x, nz)) pz = nz;
+      player.position.x = THREE.MathUtils.clamp(px, -HALF + 2, HALF - 2);
+      player.position.z = THREE.MathUtils.clamp(pz, -HALF + 2, HALF - 2);
       walk += dt * (riding ? 14 : 10);
       distAcc += speed * dt;
       if (distAcc >= 25) { bump("distance", Math.floor(distAcc)); distAcc = 0; }
@@ -978,7 +1074,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
     while (d < -Math.PI) d += Math.PI * 2;
     player.rotation.y += d * Math.min(1, dt * 12);
 
-    const g = groundAt(player.position.x, player.position.z);
+    const g = groundAt(player.position.x, player.position.z, player.position.y);
     vy -= 22 * dt;
     const onGround = player.position.y <= g + 0.02;
     if ((keys.Space || touch.jump) && onGround) {
@@ -1016,7 +1112,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
 
     // tunggangan mengikuti posisi pemain saat dinaiki
     if (riding) {
-      mount.g.position.set(player.position.x, groundAt(player.position.x, player.position.z), player.position.z);
+      mount.g.position.set(player.position.x, groundAt(player.position.x, player.position.z, player.position.y), player.position.z);
       mount.g.rotation.y = player.rotation.y;
       player.position.y = mount.g.position.y + 1.2;
       const swm = Math.sin(walk) * 0.5 * Math.min(1, len);
@@ -1244,12 +1340,11 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         cellKeys.delete(cellKey(rem.x, rem.y, rem.z));
         kolom.add(`${rem.x},${rem.z}`);
       }
-      // hitung ulang puncak tiap kolom yang tersentuh
+      // susun ulang daftar permukaan tiap kolom yang tersentuh
       for (const key of kolom) {
         const [kx, kz] = key.split(",").map(Number);
-        let top = -Infinity;
-        for (const p of placed) if (p.x === kx && p.z === kz) top = Math.max(top, p.y);
-        if (top === -Infinity) colTop.delete(key); else colTop.set(key, top);
+        const sisa = placed.filter((p) => p.x === kx && p.z === kz).map(permukaan).sort((a, b) => a - b);
+        if (sisa.length === 0) colTops.delete(key); else colTops.set(key, sisa);
       }
       rebuildPlaced();
       sfx.breakBlock();
@@ -1272,12 +1367,50 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       if (!riding) {
         // turun di samping tunggangan
         player.position.x += 1.5;
-        player.position.y = groundAt(player.position.x, player.position.z);
+        player.position.y = groundAt(player.position.x, player.position.z, player.position.y);
       }
       return riding;
     },
     getStats(): GameStats { return { ...stats } },
+    // Dipakai uji otomatis untuk memastikan "maju" benar-benar maju: arah
+    // pandang kamera dan posisi pemain harus bergerak searah, bukan berlawanan.
+    posisi() {
+      return {
+        x: player.position.x,
+        y: player.position.y,
+        z: player.position.z,
+        camYaw,
+        // vektor satuan arah pandang di bidang XZ
+        majuX: Math.sin(camYaw),
+        majuZ: Math.cos(camYaw),
+      };
+    },
     getStars() { return collected; },
+    // — jendela baca untuk uji otomatis —
+    // Klaim "lantai tembus & properti palsu sudah diperbaiki" harus bisa
+    // dibuktikan, bukan sekadar dinyatakan. Dua fungsi ini membuka aturan
+    // tabrakan apa adanya supaya uji bisa memeriksanya langsung.
+    tanahDi(x: number, z: number, dariY?: number) { return groundAt(x, z, dariY); },
+    // Kelancaran sungguhan: berapa bingkai per detik yang benar-benar tergambar,
+    // dan berapa milidetik yang dipakai tiap bingkai. Mutu grafis yang dipilih
+    // harus terlihat bedanya di angka ini.
+    kinerja() {
+      // Dua cara hitung, sengaja dua-duanya dilaporkan:
+      //   fps        — rata-rata sepanjang sesi (tahan guncangan, dipakai uji)
+      //   fpsSesaat  — rata-rata bergerak, ikut naik-turun (enak dilihat pemain)
+      const detik = (performance.now() - mulaiUkur) / 1000;
+      return {
+        fps: detik > 0 ? bingkaiTotal / detik : 0,
+        fpsSesaat: msBingkai > 0 ? 1000 / msBingkai : 0,
+        msPerBingkai: msBingkai,
+        bingkai: bingkaiTotal,
+        detik,
+        mutu,
+      };
+    },
+    padatDi(x: number, y: number, z: number) { return terhalang(x, y, z); },
+    pusatGua() { return caveCenters.map((c) => ({ ...c })); },
+
     exportBlocks(): SavedBlock[] {
       return placed.map((p) => ({ x: p.x, y: p.y, z: p.z, c: p.c, s: p.s }));
     },
@@ -1289,7 +1422,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
         if (cellKeys.has(cellKey(x, y, z))) continue;
         placed.push({ x, y, z, c: b.c, s });
         cellKeys.add(cellKey(x, y, z));
-        colTop.set(`${x},${z}`, Math.max(colTop.get(`${x},${z}`) ?? -Infinity, y));
+        catatKolom({ x, y, z, s });
       }
       rebuildPlaced(); // sekali di akhir, jauh lebih cepat daripada per blok
     },
@@ -1533,6 +1666,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks) {
       document.removeEventListener("pointerlockchange", onLockChange);
       if (document.pointerLockElement === canvas) document.exitPointerLock?.();
       renderer.dispose();
+      // Lepas konteks GPU supaya memori kartu grafis benar-benar bebas. Aman karena
+      // pemanggil selalu membuang canvas ini dan membuat yang baru saat mulai ulang.
+      renderer.forceContextLoss();
     },
   };
 }
