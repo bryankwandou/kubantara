@@ -21,11 +21,12 @@ import { currentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// Dijalankan di Singapura, dekat anak-anak di Indonesia. Rute lain tetap di
-// dekat database (us-east-1); rute ini hanya menyentuh database sekali per
-// menit untuk kode keluarga, jadi jarak ke database tidak berarti di sini,
-// sedangkan jarak ke anak terasa di setiap langkah.
-export const preferredRegion = "sin1";
+// Catatan wilayah: fungsi ini jalan di iad1 (Washington), sama dengan database
+// di us-east-1. Dari Indonesia pulang-pergi sekitar 300 ms walau server hanya
+// butuh 1 ms. preferredRegion per rute diabaikan di paket Vercel Hobby, dan
+// memindah seluruh proyek ke sin1 membuat /api/bersama (6 kueri tiap 2 detik)
+// jauh lebih lambat. Jalan keluarnya: database dan kehadiran sama-sama di
+// Singapura — butuh proyek Neon baru di ap-southeast-1.
 
 interface Hadir {
   username: string;
