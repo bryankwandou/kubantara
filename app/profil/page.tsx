@@ -181,7 +181,10 @@ export default function ProfilPage() {
                     got ? "bg-emerald-500/10" : "bg-slate-900 opacity-60"
                   }`}
                 >
-                  <span className="text-xl">{got ? "🏆" : "🔒"}</span>
+                  <span
+                    aria-label={got ? "Didapat" : "Terkunci"}
+                    className={`h-3 w-3 shrink-0 rounded-full ${got ? "bg-emerald-400" : "border-2 border-slate-600"}`}
+                  />
                   <div className="min-w-0">
                     <p className={`text-sm font-bold ${got ? "text-emerald-200" : "text-slate-400"}`}>{a.name}</p>
                     <p className="truncate text-xs text-slate-500">{a.desc}</p>
@@ -201,7 +204,8 @@ export default function ProfilPage() {
               return (
                 <div key={q.id} className={`rounded-xl px-3 py-2 ${done ? "bg-emerald-500/10" : "bg-slate-900"}`}>
                   <p className={`text-sm font-bold ${done ? "text-emerald-200" : "text-slate-300"}`}>
-                    {done ? "✅ " : "⭐ "}{q.name}
+                    {q.name}
+                    {done && <span className="ml-2 text-xs font-semibold text-emerald-400">Selesai</span>}
                     <span className="ml-2 text-xs font-normal text-amber-400">+{q.xp} XP</span>
                   </p>
                   <p className="mt-0.5 text-xs leading-snug text-slate-500">{q.story}</p>
@@ -244,7 +248,7 @@ export default function ProfilPage() {
               const owned = p.gear.includes(g.id);
               return (
                 <div key={g.id} className={`rounded-xl px-3 py-2 ${owned ? "bg-slate-900" : "bg-slate-900 opacity-50"}`}>
-                  <p className="text-xs font-bold text-slate-200">{owned ? "🛠️ " : "🔒 "}{g.name}</p>
+                  <p className="text-xs font-bold text-slate-200">{g.name}</p>
                   <p className="text-[11px] text-slate-500">{owned ? g.desc : `Lv ${g.levelNeed}`}</p>
                 </div>
               );
@@ -260,7 +264,7 @@ export default function ProfilPage() {
             href="/bukti"
             className="mb-3 inline-block rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-slate-700"
           >
-            🔎 Bukti kepemilikan skin (untuk orang tua)
+            Bukti kepemilikan skin (untuk orang tua)
           </Link>
           <br />
           {!hapusBuka ? (
