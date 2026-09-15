@@ -46,7 +46,7 @@ const TUTOR = [
   {
     emoji: "🌏",
     judul: "Selamat datang di Kubantara!",
-    isi: "Bintang-bintang di langit pulau ini padam. Kamu yang akan mengembalikan cahayanya. Tidak ada musuh di sini, dan kamu tidak bisa kalah — main santai saja.",
+    isi: "Bintang-bintang di langit pulau ini padam. Kamu yang akan mengembalikan cahayanya. Tidak ada musuh di sini. Di mode Santai kamu tidak bisa kalah; pilih mode Petualangan di Pengaturan kalau mau tantangan dengan nyawa.",
   },
   {
     emoji: "🕹️",
@@ -953,7 +953,9 @@ export default function PlayPage() {
       {tata.sentuh && tata.bentuk === "hp-tegak" && !miringDitutup && (
         <button
           onClick={() => setMiringDitutup(true)}
-          className="absolute bottom-52 left-1/2 z-30 -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
+          // di bawah palet warna, bukan di atas joystick: di HP kecil posisi
+          // bawah menutupi tombol Naik (ketahuan lewat uji-tata-layar.mjs)
+          className="absolute top-48 left-1/2 z-30 w-max max-w-[80vw] -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
         >
           📱↻ Miringkan HP-mu — pulaunya jadi lebih lebar (ketuk untuk menutup)
         </button>
@@ -1057,7 +1059,9 @@ export default function PlayPage() {
         className={
           tata.baring
             ? "absolute right-3 top-1/2 grid -translate-y-1/2 grid-cols-2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow"
-            : "absolute left-1/2 top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5"
+            // HP tegak: bar status membungkus jadi tiga baris (~138px), jadi
+            // palet diletakkan di bawahnya; di layar lebar bar hanya satu baris.
+            : "absolute left-1/2 top-36 sm:top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5"
         }
       >
         {PALETTE.map((p, i) => (

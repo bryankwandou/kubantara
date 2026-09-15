@@ -2,10 +2,21 @@
 // Bangun & bongkar blok, sihir warna, hewan peliharaan, tunggangan,
 // satwa liar, siklus siang-malam. Tanpa musuh, tanpa kalah.
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { sfx } from "./sound";
 
-const WORLD = 112;
+// 192 × 192 petak. Pulau lama (112) tetap utuh di tengah; tambahan lebarnya
+// menjadi cincin pegunungan yang mengelilinginya.
+const WORLD = 192;
 const HALF = WORLD / 2;
+// Lebar pulau asli. Bintang dan satwa tetap ditebar di sini supaya selalu
+// terjangkau; pegunungan di luarnya adalah wilayah jelajah tambahan.
+const PULAU = 112;
 const WATER_LEVEL = 2.5;
 const MAX_PLACED = 4000;
 const DAY_LEN = 120; // detik satu putaran siang-malam penuh
@@ -29,10 +40,20 @@ function smooth(x: number, z: number) {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 function terrainHeight(x: number, z: number) {
-  return Math.floor(
+  const dasar =
     smooth(x / 26 + 100, z / 26 + 100) * 8 +
-    smooth(x / 10 + 40, z / 10 + 40) * 3
-  );
+    smooth(x / 10 + 40, z / 10 + 40) * 3;
+  // Pegunungan hanya tumbuh di luar pulau lama. Di dalam radius 50 nilainya
+  // nol, jadi desa, gua, dan titik yang dipakai uji tidak bergeser sedikit pun.
+  const r = Math.sqrt(x * x + z * z);
+  const t = Math.min(1, Math.max(0, (r - 50) / 26));
+  const cincin = t * t * (3 - 2 * t);
+  if (cincin === 0) return Math.floor(dasar);
+  // puncak runcing (dikuadratkan) + tonjolan kecil supaya lerengnya tidak mulus
+  const puncak =
+    Math.pow(smooth(x / 17 + 500, z / 17 + 500), 2) * 24 +
+    smooth(x / 6 + 900, z / 6 + 900) * 3;
+  return Math.floor(dasar + cincin * puncak);
 }
 
 export type Biome = "grass" | "dirt" | "sand" | "stone" | "wood" | "leaf" | "snow";
@@ -53,12 +74,15 @@ export type Blueprint = "rumah" | "menara" | "tangga" | "pagar";
 export type Shape = "kubus" | "kaca" | "lampu" | "setengah";
 
 // Mutu grafis yang bisa dipilih pemain. "auto" = tebak dari perangkatnya.
-export type Kualitas = "auto" | "rendah" | "sedang" | "tinggi";
+export type Kualitas = "auto" | "rendah" | "sedang" | "tinggi" | "ultra";
 export const KUALITAS: { id: Kualitas; label: string; catatan: string }[] = [
   { id: "auto",   label: "Otomatis", catatan: "menyesuaikan perangkatmu" },
   { id: "rendah", label: "Rendah",   catatan: "paling lancar, tanpa bayangan" },
   { id: "sedang", label: "Sedang",   catatan: "seimbang" },
-  { id: "tinggi", label: "Tinggi",   catatan: "paling indah, butuh perangkat kuat" },
+  { id: "tinggi", label: "Tinggi",   catatan: "indah, butuh perangkat cukup kuat" },
+  // Tidak pernah dipilih otomatis: bayangan sudut (GTAO) dan pendar (bloom)
+  // menggambar ulang layar beberapa kali tiap bingkai.
+  { id: "ultra",  label: "Ultra",    catatan: "bayangan sudut, pendar cahaya, tepi halus — butuh kartu grafis" },
 ];
 
 // Dari belakang bahu, atau dari mata anak sendiri.
@@ -150,6 +174,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     !opsi.kualitas || opsi.kualitas === "auto" ? (auto ? "rendah" : "tinggi") : opsi.kualitas;
   const lowEnd = mutu === "rendah";
   const sedang = mutu === "sedang";
+  const ultra = mutu === "ultra";
   // pengali ketajaman & jarak pandang per tingkat
   const tajam = lowEnd ? 1.25 : sedang ? 1.5 : 2;
   const jauh = lowEnd ? 0.65 : sedang ? 0.85 : 1;
@@ -157,7 +182,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, tajam));
   renderer.shadowMap.enabled = !lowEnd;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.type = ultra ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   // Warna & pencahayaan lebih nyata: ruang warna sRGB + tone mapping sinema
   // membuat cahaya matahari terasa hangat, bukan datar & pucat.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -171,17 +196,21 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   scene.background = skyDay.clone();
   // jarak pandang lebih pendek di perangkat lemah: kabut menutup batasnya
   // sehingga tidak terlihat seperti dunia yang terpotong
-  scene.fog = new THREE.Fog(skyDay.getHex(), 70 * jauh, 165 * jauh);
+  scene.fog = new THREE.Fog(skyDay.getHex(), 85 * jauh, 210 * jauh);
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 500 * jauh);
 
   // ---------- cahaya ----------
   const sun = new THREE.DirectionalLight(0xfff4d6, 2.2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(lowEnd ? 512 : sedang ? 1024 : 2048, lowEnd ? 512 : sedang ? 1024 : 2048);
+  const petaBayangan = lowEnd ? 512 : sedang ? 1024 : ultra ? 4096 : 2048;
+  sun.shadow.mapSize.set(petaBayangan, petaBayangan);
   const scam = sun.shadow.camera as THREE.OrthographicCamera;
   scam.left = -80; scam.right = 80; scam.top = 80; scam.bottom = -80;
-  const ambient = new THREE.AmbientLight(0xbfd9ff, 0.9);
+  // Cahaya dari langit (biru) di sisi atas, pantulan tanah (cokelat hangat) di
+  // sisi bawah. Sisi balok yang tidak kena matahari jadi punya warna, bukan abu.
+  const ambient = new THREE.HemisphereLight(0xcfe6ff, 0x6b5a44, 1.1);
+  scene.add(sun.target);
   const moon = new THREE.DirectionalLight(0x9fb8ff, 0.0);
   // Cahaya Malam: lentera tak terlihat yang mengikuti pemain saat gelap
   const glow = new THREE.PointLight(0xffe6a8, 0, 18, 2);
@@ -293,6 +322,21 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       }
     }
   }
+  // Isi dinding tebing. Tiap kolom hanya punya lapisan atas + satu tanah, jadi
+  // di lereng curam pegunungan terlihat celah bolong ke langit di bawahnya.
+  // Kolom diisi ke bawah sampai setinggi tetangga terendahnya.
+  for (let x = -HALF; x < HALF; x++) {
+    for (let z = -HALF; z < HALF; z++) {
+      const h = heights[x + HALF][z + HALF];
+      const tetangga = [
+        heights[x + HALF - 1]?.[z + HALF], heights[x + HALF + 1]?.[z + HALF],
+        heights[x + HALF]?.[z + HALF - 1], heights[x + HALF]?.[z + HALF + 1],
+      ].filter((v): v is number => v !== undefined);
+      const terendah = Math.min(h, ...tetangga);
+      for (let y = h - 2; y >= terendah; y--) put(y > 7 ? layers.stone : layers.dirt, x, y, z);
+    }
+  }
+
   // ---------- desa: rumah kecil di dekat tiap penduduk ----------
   // Koordinat harus sejalan dengan NPC_DATA di bawah agar tiap penduduk punya rumah.
   const VILLAGE_SPOTS = [
@@ -382,10 +426,21 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
 
   for (const key of Object.keys(layers) as Biome[]) {
     const l = layers[key];
+    // Warna dasar dipindah ke tiap balok dengan sedikit selisih terang-gelap.
+    // Tanpa ini sepetak rumput 50 balok terlihat seperti satu lembar datar.
     const mesh = new THREE.InstancedMesh(
-      box, new THREE.MeshLambertMaterial({ color: l.color }), l.cells.length
+      box, new THREE.MeshLambertMaterial({ color: 0xffffff }), l.cells.length
     );
-    l.cells.forEach((mat, i) => mesh.setMatrixAt(i, mat));
+    const dasarWarna = new THREE.Color(l.color);
+    const w = new THREE.Color();
+    const pos = new THREE.Vector3();
+    l.cells.forEach((mat, i) => {
+      mesh.setMatrixAt(i, mat);
+      pos.setFromMatrixPosition(mat);
+      const acak = hash(pos.x * 1.31 + pos.y * 7.7, pos.z * 1.73 - pos.y * 3.1);
+      w.copy(dasarWarna).multiplyScalar(0.88 + acak * 0.2);
+      mesh.setColorAt(i, w);
+    });
     mesh.castShadow = key === "wood" || key === "leaf";
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -596,15 +651,47 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       const p = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       p.position.set(x, y, z); p.castShadow = true; return p;
     };
+    const hair = new THREE.MeshLambertMaterial({ color: 0x2b1b12 });
+    const putih = new THREE.MeshBasicMaterial({ color: 0xf8f8f4 });
+    const hitam = new THREE.MeshBasicMaterial({ color: 0x1b1410 });
+    const bibir = new THREE.MeshLambertMaterial({ color: 0xb8544a });
+    const sepatu = new THREE.MeshLambertMaterial({ color: 0x2a2a30 });
+    const sabuk = new THREE.MeshLambertMaterial({ color: 0x3a2a1c });
+    // Bagian kecil tidak memberi bayangan: tidak terlihat dan hanya membebani.
+    const kecil = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number) => {
+      const p = mk(w, h, d, mat, x, y, z); p.castShadow = false; return p;
+    };
+
     const head = mk(0.55, 0.55, 0.55, skin, 0, 1.55, 0);
-    head.add(mk(0.08, 0.08, 0.02, new THREE.MeshBasicMaterial({ color: 0x222222 }), -0.12, 0.05, 0.29));
-    head.add(mk(0.08, 0.08, 0.02, new THREE.MeshBasicMaterial({ color: 0x222222 }), 0.12, 0.05, 0.29));
+    // rambut: atas, belakang, dan poni tipis di dahi
+    head.add(kecil(0.6, 0.14, 0.6, hair, 0, 0.3, 0));
+    head.add(kecil(0.6, 0.38, 0.1, hair, 0, 0.1, -0.26));
+    head.add(kecil(0.58, 0.08, 0.06, hair, 0, 0.21, 0.28));
+    head.add(kecil(0.08, 0.26, 0.5, hair, -0.29, 0.1, -0.02));
+    head.add(kecil(0.08, 0.26, 0.5, hair, 0.29, 0.1, -0.02));
+    // mata: bagian putih, lalu pupil yang sedikit menonjol ke depan
+    for (const sx of [-1, 1]) {
+      head.add(kecil(0.13, 0.11, 0.02, putih, sx * 0.13, 0.03, 0.28));
+      head.add(kecil(0.06, 0.08, 0.02, hitam, sx * 0.12, 0.03, 0.295));
+      head.add(kecil(0.13, 0.03, 0.02, hair, sx * 0.13, 0.13, 0.285));   // alis
+    }
+    head.add(kecil(0.05, 0.07, 0.05, skin, 0, -0.05, 0.29));              // hidung
+    head.add(kecil(0.14, 0.035, 0.02, bibir, 0, -0.15, 0.28));           // mulut
+    const neck = kecil(0.2, 0.1, 0.2, skin, 0, 1.25, 0);
+
     const body = mk(0.6, 0.7, 0.35, shirt, 0, 0.95, 0);
+    body.add(kecil(0.62, 0.08, 0.37, sabuk, 0, -0.3, 0));
+    body.add(kecil(0.3, 0.06, 0.02, skin, 0, 0.33, 0.18));                // kerah terbuka
+
     const armL = mk(0.2, 0.6, 0.2, shirt, -0.42, 0.95, 0);
     const armR = mk(0.2, 0.6, 0.2, shirt, 0.42, 0.95, 0);
+    for (const arm of [armL, armR]) arm.add(kecil(0.18, 0.15, 0.18, skin, 0, -0.36, 0)); // tangan
+
     const legL = mk(0.24, 0.6, 0.24, pants, -0.16, 0.3, 0);
     const legR = mk(0.24, 0.6, 0.24, pants, 0.16, 0.3, 0);
-    g.add(head, body, armL, armR, legL, legR);
+    for (const leg of [legL, legR]) leg.add(kecil(0.27, 0.12, 0.34, sepatu, 0, -0.26, 0.04));
+
+    g.add(head, neck, body, armL, armR, legL, legR);
     return { g, head, armL, armR, legL, legR, shirt, pants };
   }
   const kid = buildKid();
@@ -690,8 +777,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   for (let i = 0; i < 8; i++) {
     const col = [0xffffff, 0xdddddd, 0xf7c59f, 0x9ad1f5][i % 4];
     const c = buildCritter(col, 0.4, 0.3, 0.55);
-    const x = Math.floor((hash(i, 5) - 0.5) * (WORLD - 20));
-    const z = Math.floor((hash(i, 9) - 0.5) * (WORLD - 20));
+    const x = Math.floor((hash(i, 5) - 0.5) * (PULAU - 20));
+    const z = Math.floor((hash(i, 9) - 0.5) * (PULAU - 20));
     c.g.position.set(x, groundAt(x, z), z);
     // hati kecil muncul di atas satwa yang sudah dijinakkan
     const heart = new THREE.Mesh(heartGeo, heartMat);
@@ -798,8 +885,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   const surfaceStars = 24 - caveCenters.length;
   while (placedStars < surfaceStars) {
     seed++;
-    const x = Math.floor((hash(seed, 11) - 0.5) * (WORLD - 12));
-    const z = Math.floor((hash(seed, 23) - 0.5) * (WORLD - 12));
+    const x = Math.floor((hash(seed, 11) - 0.5) * (PULAU - 12));
+    const z = Math.floor((hash(seed, 23) - 0.5) * (PULAU - 12));
     const h = groundAt(x, z);
     if (h < WATER_LEVEL + 1) continue;
     const s = new THREE.Mesh(starGeo, starMat);
@@ -951,9 +1038,37 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   let lastTime = performance.now();
   let gameTime = 0;
 
+  // Olah gambar khusus Ultra:
+  //   GTAO  — sudut dan celah antar balok jadi lebih gelap, seperti cahaya
+  //           sungguhan yang sulit masuk ke sela. Ini yang paling mengubah
+  //           kesan "kotak datar" menjadi dunia yang punya kedalaman.
+  //   Bloom — matahari, lampu, kristal gua, dan kembang api berpendar.
+  //   Output — tone mapping & sRGB dipindah ke akhir rantai.
+  //   SMAA  — tepi balok halus tanpa bergerigi.
+  let composer: EffectComposer | null = null;
+  let ao: GTAOPass | null = null;
+  let bloom: UnrealBloomPass | null = null;
+  if (ultra) {
+    const w0 = Math.max(1, canvas.clientWidth), h0 = Math.max(1, canvas.clientHeight);
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    ao = new GTAOPass(scene, camera, w0, h0);
+    ao.updateGtaoMaterial({ radius: 0.7, distanceExponent: 1.4, thickness: 1.2, scale: 1.1, samples: 12 });
+    ao.blendIntensity = 0.85;
+    composer.addPass(ao);
+    bloom = new UnrealBloomPass(new THREE.Vector2(w0, h0), 0.32, 0.55, 0.9);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    composer.addPass(new SMAAPass());
+  }
+
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     renderer.setSize(w, h, false);
+    if (composer) {
+      composer.setPixelRatio(renderer.getPixelRatio());
+      composer.setSize(w, h);
+    }
     camera.aspect = w / h; camera.updateProjectionMatrix();
   }
   window.addEventListener("resize", resize);
@@ -1005,7 +1120,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     const phase = ((t / DAY_LEN) + DAY_START) % 1; // 0..1, mulai dari siang
     const ang = phase * Math.PI * 2 - Math.PI / 2;
     const sunY = Math.sin(ang), sunX = Math.cos(ang);
-    sun.position.set(sunX * 60, sunY * 80, 30);
+    // Matahari & kotak bayangannya mengikuti anak. Dulu dipaku di tengah dunia,
+    // jadi di peta yang lebih lebar tepi pegunungan tidak punya bayangan.
+    sun.position.set(player.position.x + sunX * 60, sunY * 80, player.position.z + 30);
+    sun.target.position.copy(player.position);
     sunBall.position.copy(player.position).add(new THREE.Vector3(sunX * 120, sunY * 140, 60));
     moon.position.set(-sunX * 60, -sunY * 80, 30);
     moonBall.position.copy(player.position).add(new THREE.Vector3(-sunX * 120, -sunY * 140, 60));
@@ -1315,7 +1433,35 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       const vert = Math.sin(camPitch) * camDist;
       const cx = player.position.x - Math.sin(camYaw) * horiz;
       const cz = player.position.z - Math.cos(camYaw) * horiz;
-      camera.position.lerp(new THREE.Vector3(cx, player.position.y + 1.5 + vert, cz), 0.12);
+      // Kamera tidak boleh masuk ke dalam bukit. Ditelusuri dari kepala anak ke
+      // posisi kamera yang diinginkan; begitu menyentuh tanah, kamera berhenti
+      // sebelum titik itu. Di pegunungan tanpa ini layar berubah gelap total
+      // karena kamera berada di dalam balok batu.
+      const kepalaY = player.position.y + 1.5;
+      const tujuan = new THREE.Vector3(cx, kepalaY + vert, cz);
+      const langkahCek = 0.3;
+      const panjang = Math.hypot(cx - player.position.x, vert, cz - player.position.z);
+      let aman = panjang;
+      for (let s = 0.6; s <= panjang; s += langkahCek) {
+        const f = s / panjang;
+        const px = player.position.x + (cx - player.position.x) * f;
+        const pz = player.position.z + (cz - player.position.z) * f;
+        const py = kepalaY + vert * f;
+        if (groundAt(px, pz) > py - 0.35) { aman = Math.max(0.6, s - langkahCek); break; }
+      }
+      if (aman < panjang) {
+        const f = aman / panjang;
+        tujuan.set(
+          player.position.x + (cx - player.position.x) * f,
+          kepalaY + vert * f,
+          player.position.z + (cz - player.position.z) * f,
+        );
+        // mendekat seketika (tidak boleh sempat terlihat dari dalam tanah),
+        // menjauh lagi tetap diredam supaya tidak tersentak
+        const sekarang = camera.position.distanceTo(player.position);
+        if (tujuan.distanceTo(player.position) < sekarang) camera.position.copy(tujuan);
+        else camera.position.lerp(tujuan, 0.12);
+      } else camera.position.lerp(tujuan, 0.12);
       camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
     }
 
@@ -1432,7 +1578,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       if (c.position.x > HALF + 20) c.position.x = -HALF - 20;
     }
 
-    renderer.render(scene, camera);
+    if (composer) composer.render(dt);
+    else renderer.render(scene, camera);
   }
   let lastLabel = "";
   let lastDungeonCave = -1;
@@ -1864,6 +2011,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       canvas.removeEventListener("wheel", onWheel);
       document.removeEventListener("pointerlockchange", onLockChange);
       if (document.pointerLockElement === canvas) document.exitPointerLock?.();
+      ao?.dispose();
+      bloom?.dispose();
+      composer?.dispose();
       renderer.dispose();
       // Lepas konteks GPU supaya memori kartu grafis benar-benar bebas. Aman karena
       // pemanggil selalu membuang canvas ini dan membuat yang baru saat mulai ulang.
