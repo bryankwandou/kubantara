@@ -21,6 +21,12 @@ import { currentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+// Dijalankan di Singapura, dekat anak-anak di Indonesia. Rute lain tetap di
+// dekat database (us-east-1); rute ini hanya menyentuh database sekali per
+// menit untuk kode keluarga, jadi jarak ke database tidak berarti di sini,
+// sedangkan jarak ke anak terasa di setiap langkah.
+export const preferredRegion = "sin1";
+
 interface Hadir {
   username: string;
   x: number; y: number; z: number;
