@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { createGame, PALETTE, SHAPES, EMOTES, KUALITAS, type Spell, type GameStats, type Perks, type Blueprint, type Shape, type Kualitas } from "@/lib/voxel-game";
+import { createGame, PALETTE, SHAPES, EMOTES, KUALITAS, type Spell, type GameStats, type Perks, type Blueprint, type Shape, type Kualitas, type SudutPandang, type Mode, NYAWA_MAKS } from "@/lib/voxel-game";
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
 import { music } from "@/lib/music";
 import { sfx } from "@/lib/sound";
@@ -165,6 +165,36 @@ export default function PlayPage() {
   const [tutorStep, setTutorStep] = useState(0);
   const [miringDitutup, setMiringDitutup] = useState(false);
   const [stikDipegang, setStikDipegang] = useState(false);
+  const [sudutPandang, setSudutPandang] = useState<SudutPandang>("orang-ketiga");
+  // Mode main & nyawa. Disimpan per perangkat: adik boleh santai sementara
+  // kakak bermain petualangan di laptopnya sendiri.
+  const [mode, setMode] = useState<Mode>("santai");
+  const modeRef = useRef<Mode>("santai");
+  const [nyawa, setNyawa] = useState(NYAWA_MAKS);
+  useEffect(() => {
+    try {
+      const m = localStorage.getItem("kubantara_mode");
+      if (m === "petualangan" || m === "santai") { setMode(m); modeRef.current = m; }
+    } catch { /* penyimpanan diblokir; pakai santai saja */ }
+  }, []);
+  const gantiMode = useCallback((m: Mode) => {
+    setMode(m);
+    modeRef.current = m;
+    setNyawa(NYAWA_MAKS);
+    try { localStorage.setItem("kubantara_mode", m); } catch {}
+    gameRef.current?.setMode(m);
+  }, []);
+  // Dibaca saat mesin dipasang ulang (mis. saat mutu grafis diganti) supaya
+  // pilihan sudut pandang tidak diam-diam kembali ke bawaan.
+  const sudutPandangRef = useRef<SudutPandang>("orang-ketiga");
+  const gantiSudutPandang = useCallback(() => {
+    const g = gameRef.current;
+    if (!g) return;
+    const baru = g.getSudutPandang() === "orang-ketiga" ? "orang-pertama" : "orang-ketiga";
+    g.setSudutPandang(baru);
+    sudutPandangRef.current = baru;
+    setSudutPandang(baru);
+  }, []);
   // Mutu grafis pilihan pemain. Dibaca dari perangkat ini, bukan dari server —
   // laptop kakak dan HP adik boleh beda tanpa saling mengganggu.
   const [kualitas, setKualitas] = useState<Kualitas>("auto");
@@ -414,6 +444,12 @@ export default function PlayPage() {
       },
       onNpc: (n) => setNpc(n),
       onWeather: (w) => setWeather(w),
+      onNyawa: (n) => {
+        setNyawa(n.nyawa);
+        // mode bisa berubah dari mesin (pintasan, uji), jadi bar ikut mesin, bukan panel
+        setMode(n.mode); modeRef.current = n.mode;
+        if (n.pingsan) showToastRef.current?.("Aduh, jatuhnya tinggi! Kamu bangun lagi di tempat aman 💙");
+      },
       onDungeon: (d) => {
         setDungeon(d);
         if (d.justCleared) {
@@ -435,7 +471,7 @@ export default function PlayPage() {
             .catch(() => {});
         }
       },
-    }, { kualitas });
+    }, { kualitas, sudutPandang: sudutPandangRef.current, mode: modeRef.current });
     gameRef.current = game;
     // Pegangan untuk uji otomatis (uji-kendali.mjs). Tidak ada rahasia di sini —
     // seluruh isinya sudah berjalan di peramban anak.
@@ -475,7 +511,42 @@ export default function PlayPage() {
 
     const iv = setInterval(save, 20000);
 
-    // main bersama: kirim posisi & terima posisi saudara tiap 2 detik.
+    // Kehadiran waktu-nyata: posisi & lambaian, empat kali per detik.
+    //
+    // Ini dipisah dari pengiriman balok dengan sengaja. Posisi lewat /api/hadir
+    // yang hanya menyentuh memori server, jadi bisa sesering ini tanpa
+    // membebani database; balok tetap lewat /api/bersama tiap 2 detik karena
+    // balok harus tersimpan permanen. Dulu keduanya jalan bersama tiap 2 detik
+    // lewat database, dan itulah sebabnya saudara selalu terlihat tersendat.
+    let hadirAktif = true;
+    let hadirSibuk = false;   // jangan menumpuk permintaan kalau jaringan lambat
+    const ivHadir = setInterval(async () => {
+      if (!hadirAktif || hadirSibuk || !profileRef.current) return;
+      hadirSibuk = true;
+      const pos = game.getPosition();
+      try {
+        const res = await fetch("/api/hadir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...pos,
+            hero: profileRef.current.activeHero,
+            emote: emoteRef.current ?? undefined,
+          }),
+        });
+        emoteRef.current = null;
+        const data = await res.json();
+        if (!data.enabled) { hadirAktif = false; return; }
+        game.setFriends(data.teman ?? []);
+        setTeman((data.teman ?? []).length);
+      } catch {
+        // sekejap putus bukan alasan berhenti; siklus berikutnya mencoba lagi
+      } finally {
+        hadirSibuk = false;
+      }
+    }, 250);
+
+    // Balok bersama: tetap lewat database supaya bangunan tidak hilang.
     // Server mematikan sendiri kalau akun belum diberi kode keluarga.
     let bersamaAktif = true;
     const ivBersama = setInterval(async () => {
@@ -491,14 +562,11 @@ export default function PlayPage() {
             hero: profileRef.current.activeHero,
             blokBaru,
             sejak: sejakRef.current,
-            emote: emoteRef.current ?? undefined,
           }),
         });
-        emoteRef.current = null; // sudah terkirim, jangan diulang tiap siklus
         const data = await res.json();
         if (!data.enabled) { bersamaAktif = false; return; } // hemat kuota database
-        game.setFriends(data.teman ?? []);
-        setTeman((data.teman ?? []).length);
+        // posisi teman datang dari /api/hadir, bukan dari sini
         if (Array.isArray(data.blok) && data.blok.length) {
           const n = game.applyRemoteBlocks(data.blok);
           if (n > 0) showToast(`Saudaramu membangun ${n} balok baru`);
@@ -513,6 +581,7 @@ export default function PlayPage() {
     window.addEventListener("pagehide", onHide);
     return () => {
       clearInterval(iv);
+      clearInterval(ivHadir);
       clearInterval(ivBersama);
       window.removeEventListener("pagehide", onHide);
       music.stop();
@@ -583,12 +652,13 @@ export default function PlayPage() {
       if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key.toLowerCase() === "v") { e.preventDefault(); gantiSudutPandang(); return; }
       const a = AKSI.find((x) => x.tombol === e.key.toLowerCase());
       if (a) { e.preventDefault(); jalankanAksi(a.id); }
     };
     window.addEventListener("keydown", tekan);
     return () => window.removeEventListener("keydown", tekan);
-  }, [jalankanAksi]);
+  }, [jalankanAksi, gantiSudutPandang]);
 
   // Stik analog.
   //
@@ -804,6 +874,17 @@ export default function PlayPage() {
           }`}
         >
           🖱️
+        </button>
+        <button
+          onClick={gantiSudutPandang}
+          data-uji="sudut-pandang"
+          title="Ganti sudut pandang (tombol V)"
+          aria-label="Ganti sudut pandang"
+          className={`pointer-events-auto rounded-xl px-2.5 py-1.5 text-xs font-bold shadow sm:px-3 sm:py-2 sm:text-sm ${
+            sudutPandang === "orang-pertama" ? "bg-emerald-500 text-white" : "bg-white/85 text-slate-700"
+          }`}
+        >
+          {sudutPandang === "orang-pertama" ? "👁️ Mata" : "🎥 Bahu"}
         </button>
         <button
           onClick={() => setShowPet((v) => !v)}
@@ -1057,6 +1138,29 @@ export default function PlayPage() {
 
       {/* Aksi bangun / bongkar / tunggang. Tiap tombol menyebut pintasan papan
           ketiknya, supaya anak yang main di laptop tidak perlu menebak. */}
+      {/* Nyawa. Hanya muncul di mode Petualangan — di mode Santai tidak ada yang
+          bisa melukai, jadi bar nyawa cuma akan membingungkan. */}
+      {mode === "petualangan" && (
+        <div
+          data-uji="nyawa"
+          aria-label={`Nyawa ${nyawa} dari ${NYAWA_MAKS}`}
+          className={`absolute z-20 flex gap-1 rounded-full bg-slate-950/45 px-2.5 py-1.5 ${
+            tata.baring ? "left-1/2 top-2 -translate-x-1/2" : "left-1/2 top-16 -translate-x-1/2"
+          }`}
+        >
+          {Array.from({ length: NYAWA_MAKS }, (_, i) => (
+            <span
+              key={i}
+              // hati yang hilang tetap tergambar samar, supaya anak melihat
+              // berapa yang bisa kembali — bukan sekadar berapa yang tersisa
+              className={`text-base leading-none transition-opacity ${i < nyawa ? "opacity-100" : "opacity-25 grayscale"}`}
+            >
+              ❤️
+            </span>
+          ))}
+        </div>
+      )}
+
       <div
         className={
           tata.baring
@@ -1191,7 +1295,7 @@ export default function PlayPage() {
               const owned = skinData?.owned.includes(s.id) ?? false;
               const busy = buyingSkin === s.id;
               return (
-                <div key={s.id} className="flex items-center gap-2 rounded-xl border border-slate-200 p-2">
+                <div key={s.id} data-uji={`skin-${s.id}`} className="flex items-center gap-2 rounded-xl border border-slate-200 p-2">
                   {/* Baju di atas, celana di bawah — seperti yang akan dipakai
                       karakternya. Dulu hanya warna baju yang terlihat, jadi anak
                       memilih skin tanpa tahu setengah tampilannya. */}
@@ -1228,6 +1332,7 @@ export default function PlayPage() {
                   </div>
                   <button
                     onClick={() => beliSkin(s)}
+                    data-uji={`skin-tombol-${s.id}`}
                     disabled={busy || (!owned && keping < s.price)}
                     className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-black shadow active:scale-95 disabled:opacity-40 ${
                       owned ? "bg-emerald-500 text-white" : "bg-violet-500 text-white"
@@ -1273,6 +1378,30 @@ export default function PlayPage() {
               className="mt-1 w-full accent-emerald-500"
             />
           </label>
+
+          <p className="mb-1.5 mt-4 text-xs font-black text-slate-700">🎮 Cara main</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {([
+              { id: "santai", label: "Santai", catatan: "membangun tanpa bahaya apa pun" },
+              { id: "petualangan", label: "Petualangan", catatan: "jatuh dari tinggi mengurangi nyawa" },
+            ] as { id: Mode; label: string; catatan: string }[]).map((m) => (
+              <button
+                key={m.id}
+                data-uji={`mode-${m.id}`}
+                onClick={() => gantiMode(m.id)}
+                title={m.catatan}
+                className={`rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors ${
+                  mode === m.id ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[10px] leading-snug text-slate-500">
+            Di mode Petualangan nyawa pulih sendiri, dan kalau habis kamu cuma
+            bangun lagi di tempat aman. Bangunanmu tidak pernah hilang.
+          </p>
 
           <p className="mb-1.5 mt-4 text-xs font-black text-slate-700">🎨 Mutu grafis</p>
           <div className="grid grid-cols-2 gap-1.5">

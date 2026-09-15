@@ -183,10 +183,18 @@ const browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable
   });
   cek("menekan LOMPAT tidak membajak arah stik", dibajak.maju > 0.15, `maju=${dibajak.maju.toFixed(2)}`);
 
+  // Uji sebelumnya baru saja melompat. Di perender perangkat lunak satu bingkai
+  // memakan ratusan milidetik, jadi satu lompatan bisa berlangsung belasan detik
+  // menurut jam dinding — dan tekanan berikutnya ditolak karena kaki belum
+  // menyentuh tanah. Jadi tombolnya ditekan berulang sampai tercatat, bukan
+  // sekali lalu menyerah.
   const lompatSebelum = await page.evaluate(() => window.__kubantara.getStats().jumps);
-  await page.locator('[data-uji="lompat"]').tap();
-  await tunggu(2000);
-  const lompatSesudah = await page.evaluate(() => window.__kubantara.getStats().jumps);
+  let lompatSesudah = lompatSebelum;
+  for (let i = 0; i < 15 && lompatSesudah === lompatSebelum; i++) {
+    await page.locator('[data-uji="lompat"]').tap();
+    await tunggu(1000);
+    lompatSesudah = await page.evaluate(() => window.__kubantara.getStats().jumps);
+  }
   cek("tombol LOMPAT benar-benar melompat", lompatSesudah > lompatSebelum, `${lompatSebelum} → ${lompatSesudah}`);
 
   cek("tanpa galat JavaScript di HP tegak", galat.length === 0, galat[0] ?? "");

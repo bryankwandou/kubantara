@@ -61,8 +61,22 @@ export const KUALITAS: { id: Kualitas; label: string; catatan: string }[] = [
   { id: "tinggi", label: "Tinggi",   catatan: "paling indah, butuh perangkat kuat" },
 ];
 
+// Dari belakang bahu, atau dari mata anak sendiri.
+export type SudutPandang = "orang-ketiga" | "orang-pertama";
+
+// Dua cara bermain.
+//   santai      — membangun tanpa bahaya apa pun. Ini yang bawaan.
+//   petualangan — jatuh dari ketinggian mengurangi nyawa, dan nyawa pulih
+//                 sendiri kalau anaknya diam sebentar.
+// Kalah tidak menghapus apa pun: anaknya bangun lagi di tempat aman dengan
+// nyawa penuh, bangunannya utuh. Permainan anak tidak boleh menghukum.
+export type Mode = "santai" | "petualangan";
+export const NYAWA_MAKS = 5;
+
 export interface GameOptions {
   kualitas?: Kualitas;
+  sudutPandang?: SudutPandang;
+  mode?: Mode;
 }
 // Emote aman: hanya lambang tetap, tidak ada teks yang bisa diketik anak.
 export const EMOTES = ["👋", "❤️", "😀", "🎉", "⭐", "👍"] as const;
@@ -88,6 +102,9 @@ export interface GameHooks {
     near: number | null; inside: number | null;
     unlocked: boolean; collected: number; total: number; justCleared: boolean;
   }) => void;
+  // Nyawa di mode petualangan. `pingsan` sekali bernilai true saat anaknya
+  // baru saja dipindahkan ke tempat aman.
+  onNyawa?: (s: { mode: Mode; nyawa: number; maks: number; pingsan: boolean }) => void;
 }
 
 export interface GameStats {
@@ -220,11 +237,28 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   // masuk ke mana-mana. Sel-sel ini diperiksa terpisah saat pemain berjalan.
   const batuPadat = new Set<string>();
   const padatKey = (x: number, y: number, z: number) => `${x},${y},${z}`;
-  // Apakah tubuh anak (kaki di y, tinggi ~1.7) menabrak batu padat di (x,z)?
+  // Apakah tubuh anak menabrak sesuatu yang padat di kolom (x,z)?
+  //
+  // Yang padat ada dua macam: cangkang gua bawaan (batuPadat) dan setiap balok
+  // yang dipasang anak (cellKeys). Sebelumnya balok pasangan hanya mengubah peta
+  // ketinggian, jadi dinding rumah buatan anak bisa ditembus begitu saja — rumah
+  // yang "ada" tapi tidak berarti apa-apa.
+  //
+  // Aturannya harus menyisakan dua celah, kalau tidak permainan jadi kaku:
+  //   • sel yang puncaknya masih terjangkau satu langkah boleh dilangkahi —
+  //     tanpa ini tangga dan trotoar setinggi satu balok jadi tembok.
+  //   • sel yang dasarnya di atas kepala boleh dilewati di bawahnya — tanpa ini
+  //     anak tidak bisa berjalan di bawah atap atau lengkungan.
   function terhalang(x: number, y: number, z: number) {
     const cx = Math.round(x), cz = Math.round(z);
-    const dari = Math.round(y + 0.15), sampai = Math.round(y + 1.5);
-    for (let cy = dari; cy <= sampai; cy++) if (batuPadat.has(padatKey(cx, cy, cz))) return true;
+    const kepala = y + 1.5;         // tinggi kepala anak
+    const bisaDilangkahi = y + LANGKAH;
+    for (let cy = Math.round(y); cy <= Math.round(kepala) + 1; cy++) {
+      if (cy + 0.5 <= bisaDilangkahi) continue;  // cukup rendah untuk dinaiki
+      if (cy - 0.5 >= kepala) continue;          // cukup tinggi untuk dilewati
+      if (batuPadat.has(padatKey(cx, cy, cz))) return true;
+      if (cellKeys.has(cellKey(cx, cy, cz))) return true;
+    }
     return false;
   }
 
@@ -855,6 +889,24 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   const touch = { x: 0, y: 0, jump: false };
 
   let vy = 0, yaw = 0, camYaw = 0, walk = 0, distAcc = 0;
+  // Sudut pandang: dari belakang bahu (bawaan) atau dari mata anak sendiri.
+  let sudutPandang: SudutPandang = opsi.sudutPandang ?? "orang-ketiga";
+  // Tombol stik gim yang sedang ditahan. Tanpa ini satu tekanan terbaca ulang
+  // di setiap bingkai dan anak memasang 60 balok per detik.
+  const padDitekan = new Set<string>();
+  // Mode main & nyawa. Di mode santai nyawa tidak pernah berkurang, jadi
+  // seluruh perhitungan di bawah dilewati begitu saja.
+  let mode: Mode = opsi.mode ?? "santai";
+  let nyawa = NYAWA_MAKS;
+  let pulihDetik = 0;       // berapa lama sudah aman tanpa terluka
+  let jatuhDari = 0;        // ketinggian tertinggi sejak kaki terangkat
+  const AMAN_JATUH = 4.5;   // di bawah ini jatuh tidak sakit sama sekali
+  function kabarNyawa(pingsan = false) {
+    hooks.onNyawa?.({ mode, nyawa, maks: NYAWA_MAKS, pingsan });
+  }
+  // Diisi setelah api dibentuk (lihat akhir fungsi); stik gim baru bisa dipakai
+  // sesudah permainan berdiri, jadi tidak pernah dipanggil sebelum siap.
+  let aksiPad: (a: "bangun" | "bongkar") => void = () => {};
   // keadaan animasi "juice" karakter — memberi rasa hidup
   let squash = 0;      // >0 = habis mendarat (memampat lalu memantul balik)
   let wasAirborne = false;
@@ -931,6 +983,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   function frame() {
     raf = requestAnimationFrame(frame);
     const now = performance.now();
+    // Waktu nyata untuk hal yang dijanjikan dalam detik ke anak (pulihnya nyawa).
+    // dt di bawah dibatasi supaya fisika stabil, jadi di HP lambat ia berjalan
+    // lebih pelan dari jam — nyawa jangan ikut melambat karenanya.
+    const dtNyata = Math.min((now - lastTime) / 1000, 1);
     const dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
     // Rata-rata bergerak waktu satu bingkai. Inilah angka yang benar-benar
@@ -1031,12 +1087,39 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       lastLabel = label; hooks.onTime(label);
     }
 
+    // ----- stik gim (Xbox/PlayStation lewat Gamepad API) -----
+    // Sumbu ditulis dalam konvensi yang sama seperti stik layar: y positif =
+    // maju. Stik gim melaporkan sumbu tegak dengan atas = -1, jadi dibalik
+    // sekali di sini — bukan di tempat lain — supaya tidak ada dua tempat yang
+    // saling membalikkan seperti bug lama.
+    let padX = 0, padZ = 0;
+    let padLompat = false;
+    if (typeof navigator.getGamepads === "function") {
+      const pads = navigator.getGamepads();
+      for (const pad of pads) {
+        if (!pad || !pad.connected) continue;
+        const mati = (v: number) => (Math.abs(v) < 0.18 ? 0 : v); // zona mati
+        padX += mati(pad.axes[0] ?? 0);
+        padZ += -mati(pad.axes[1] ?? 0);
+        // stik kanan memutar pandangan
+        camYaw -= mati(pad.axes[2] ?? 0) * dt * 2.5;
+        camPitch = Math.max(0.05, Math.min(1.35, camPitch + mati(pad.axes[3] ?? 0) * dt * 2));
+        if (pad.buttons[0]?.pressed) padLompat = true;
+        // tombol aksi: A lompat, X bangun, B bongkar, Y naik tunggangan
+        if (pad.buttons[2]?.pressed && !padDitekan.has("bangun")) { padDitekan.add("bangun"); aksiPad("bangun"); }
+        else if (!pad.buttons[2]?.pressed) padDitekan.delete("bangun");
+        if (pad.buttons[1]?.pressed && !padDitekan.has("bongkar")) { padDitekan.add("bongkar"); aksiPad("bongkar"); }
+        else if (!pad.buttons[1]?.pressed) padDitekan.delete("bongkar");
+        break; // satu stik saja; anak kedua memakai perangkatnya sendiri
+      }
+    }
+
     // ----- gerak pemain -----
     // ix = ke kanan layar, iz = maju menjauhi kamera. Keduanya memakai tanda yang
     // sama dengan yang dirasakan anak: dorong stik ke atas = maju, ke kanan = kanan.
     // touch.y sudah dikirim dalam konvensi "atas = +1" oleh lapisan kendali.
-    let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + touch.x;
-    let iz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + touch.y;
+    let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + touch.x + padX;
+    let iz = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + touch.y + padZ;
     const len = Math.hypot(ix, iz);
     if (len > 1) { ix /= len; iz /= len; }
     const moving = len > 0.15;
@@ -1077,7 +1160,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     const g = groundAt(player.position.x, player.position.z, player.position.y);
     vy -= 22 * dt;
     const onGround = player.position.y <= g + 0.02;
-    if ((keys.Space || touch.jump) && onGround) {
+    if ((keys.Space || touch.jump || padLompat) && onGround) {
       vy = (riding ? 11 : 9) * perks.jumpMul; sfx.jump(); touch.jump = false; bump("jumps");
       squash = -0.5; // sedikit meregang saat melejit ke atas
     }
@@ -1085,6 +1168,48 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     if (player.position.y < g) { player.position.y = g; vy = 0; }
     // mendarat: picu memampat sebanding kecepatan jatuh
     if (onGround && wasAirborne) squash = Math.min(1, Math.abs(vy) * 0.05 + 0.55);
+
+    // ----- nyawa (hanya mode petualangan) -----
+    if (mode === "petualangan") {
+      // Ketinggian diukur dari titik TERTINGGI sejak kaki terangkat, bukan dari
+      // kecepatan saat mendarat. Kalau dari kecepatan, melompat ke bawah air
+      // atau meluncur di lereng landai ikut terhitung jatuh — padahal tidak.
+      if (!onGround) jatuhDari = Math.max(jatuhDari, player.position.y);
+      if (onGround && wasAirborne) {
+        const turun = jatuhDari - player.position.y;
+        if (turun > AMAN_JATUH) {
+          // satu nyawa per 3 satuan di atas batas aman, dibulatkan ke atas
+          const sakit = Math.ceil((turun - AMAN_JATUH) / 3);
+          nyawa = Math.max(0, nyawa - sakit);
+          pulihDetik = 0;
+          sfx.hurt();
+          if (nyawa === 0) {
+            // Bangun lagi di tempat mulai dengan nyawa penuh. Tidak ada yang
+            // hilang — tidak balok, tidak bintang, tidak keping.
+            player.position.set(spawn.x, groundAt(spawn.x, spawn.z), spawn.z);
+            vy = 0;
+            nyawa = NYAWA_MAKS;
+            sfx.bangunLagi();
+            kabarNyawa(true);
+          } else {
+            kabarNyawa();
+          }
+        }
+        jatuhDari = player.position.y;
+      }
+      if (onGround) {
+        // Pulih sendiri: nyawa pertama kembali setelah 6 detik aman, lalu satu
+        // lagi tiap 3 detik berikutnya. Tidak perlu ramuan atau apa pun yang
+        // harus dicari — anak yang sedang membangun tidak boleh dipaksa
+        // berhenti membangun untuk mengurus nyawanya.
+        pulihDetik += dtNyata;
+        if (nyawa < NYAWA_MAKS && pulihDetik >= 6) {
+          nyawa++;
+          pulihDetik = 3;
+          kabarNyawa();
+        }
+      }
+    }
     wasAirborne = !onGround;
     squash *= Math.pow(0.001, dt); // pegas kembali ke normal dengan cepat
 
@@ -1167,14 +1292,32 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     // keyboard Q/E tetap ada untuk yang tanpa mouse; mouse mengatur yaw & pitch
     if (keys.KeyQ) camYaw += dt * 2;
     if (keys.KeyE) camYaw -= dt * 2;
-    const camDist = ((riding ? 12 : 9) + perks.camExtra) * camZoom;
-    // pitch menentukan seberapa tinggi kamera mengambang vs seberapa jauh mundur
-    const horiz = Math.cos(camPitch) * camDist;
-    const vert = Math.sin(camPitch) * camDist;
-    const cx = player.position.x - Math.sin(camYaw) * horiz;
-    const cz = player.position.z - Math.cos(camYaw) * horiz;
-    camera.position.lerp(new THREE.Vector3(cx, player.position.y + 1.5 + vert, cz), 0.12);
-    camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
+    if (sudutPandang === "orang-pertama") {
+      // Dari mata anak. Kamera menempel di kepala tanpa peredam — meredam
+      // pandangan orang-pertama membuat pusing, bukan halus.
+      // camPitch dipakai ulang: 0.62 adalah pandangan mendatar di mode ini.
+      const lihat = camPitch - 0.62;
+      const datar = Math.cos(lihat);
+      camera.position.set(
+        player.position.x + Math.sin(camYaw) * 0.15,
+        player.position.y + 1.55,
+        player.position.z + Math.cos(camYaw) * 0.15,
+      );
+      camera.lookAt(
+        camera.position.x + Math.sin(camYaw) * datar,
+        camera.position.y - Math.sin(lihat),
+        camera.position.z + Math.cos(camYaw) * datar,
+      );
+    } else {
+      const camDist = ((riding ? 12 : 9) + perks.camExtra) * camZoom;
+      // pitch menentukan seberapa tinggi kamera mengambang vs seberapa jauh mundur
+      const horiz = Math.cos(camPitch) * camDist;
+      const vert = Math.sin(camPitch) * camDist;
+      const cx = player.position.x - Math.sin(camYaw) * horiz;
+      const cz = player.position.z - Math.cos(camYaw) * horiz;
+      camera.position.lerp(new THREE.Vector3(cx, player.position.y + 1.5 + vert, cz), 0.12);
+      camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
+    }
 
     // ----- bintang: berputar, mengambang naik-turun & berdenyut memikat -----
     for (const s of stars) {
@@ -1296,7 +1439,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   let lastDungeonSig = "";
   frame();
 
-  return {
+  const api = {
     touch,
     setColor(hex: number) { placeColor = hex; },
     setShape(s: Shape) { placeShape = s; },
@@ -1391,6 +1534,62 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     // dibuktikan, bukan sekadar dinyatakan. Dua fungsi ini membuka aturan
     // tabrakan apa adanya supaya uji bisa memeriksanya langsung.
     tanahDi(x: number, z: number, dariY?: number) { return groundAt(x, z, dariY); },
+    getMode() { return mode; },
+    setMode(m: Mode) {
+      mode = m;
+      // Berganti mode selalu mengembalikan nyawa penuh, jadi anak tidak pernah
+      // masuk mode petualangan dengan sisa luka dari sesi sebelumnya.
+      nyawa = NYAWA_MAKS;
+      pulihDetik = 0;
+      jatuhDari = player.position.y;
+      kabarNyawa();
+      return mode;
+    },
+    getNyawa() { return { mode, nyawa, maks: NYAWA_MAKS }; },
+    getSudutPandang() { return sudutPandang; },
+    // Jarak kamera ke pemain — dipakai uji untuk memastikan mode orang-pertama
+    // benar-benar menempel di kepala, bukan sekadar label yang berganti.
+    jarakKamera() { return camera.position.distanceTo(player.position); },
+    // Memindahkan pemain seketika. Dipakai uji untuk mengukur jeda main
+    // bersama tanpa harus menunggu ia berjalan ke sana.
+    pindah(x: number, z: number) {
+      player.position.set(x, groundAt(x, z, player.position.y), z);
+    },
+    // Menaruh pemain di udara setinggi `tinggi` di atas tanah, lalu dibiarkan
+    // jatuh sendiri oleh fisika biasa. Dipakai uji untuk membuktikan luka jatuh
+    // di mode petualangan dihitung dari ketinggian sungguhan.
+    taruhDiUdara(x: number, z: number, tinggi: number) {
+      const g = groundAt(x, z, player.position.y);
+      player.position.set(x, g + tinggi, z);
+      vy = 0;
+    },
+    diTanah() {
+      const p = player.position;
+      return p.y <= groundAt(p.x, p.z, p.y) + 0.02;
+    },
+    // Posisi saudara yang sedang tergambar di layar ini. Dipakai uji untuk
+    // mengukur berapa lama gerakan satu anak sampai terlihat di layar anak lain.
+    temanTerlihat() {
+      return [...friends.entries()].map(([nama, e]) => ({
+        nama,
+        // posisi yang sedang tergambar, dan posisi tujuan dari server
+        x: e.g.position.x, y: e.g.position.y, z: e.g.position.z,
+        tujuanX: e.target.x, tujuanY: e.target.y, tujuanZ: e.target.z,
+      }));
+    },
+    // Warna baju & celana yang sedang dipakai — dipakai uji untuk membuktikan
+    // skin yang dibeli benar-benar menempel di karakter, bukan cuma di daftar.
+    getHero() {
+      return { shirt: kid.shirt.color.getHex(), pants: kid.pants.color.getHex() };
+    },
+    setSudutPandang(s: SudutPandang) {
+      sudutPandang = s;
+      // Di mode orang-pertama kepala sendiri persis menutupi kamera. Badannya
+      // sengaja dibiarkan terlihat supaya anak tetap melihat tangan & kakinya
+      // saat menunduk — itu yang membuat tubuhnya terasa miliknya.
+      kid.head.visible = s === "orang-ketiga";
+      return sudutPandang;
+    },
     // Kelancaran sungguhan: berapa bingkai per detik yang benar-benar tergambar,
     // dan berapa milidetik yang dipakai tiap bingkai. Mutu grafis yang dipilih
     // harus terlihat bedanya di angka ini.
@@ -1671,4 +1870,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       renderer.forceContextLoss();
     },
   };
+  // Tombol stik gim memanggil aksi yang sama persis dengan tombol layar dan
+  // pintasan papan ketik — satu jalur, bukan tiga salinan yang bisa menyimpang.
+  aksiPad = (a) => { if (a === "bangun") api.place(); else api.removeBlock(); };
+  return api;
 }
