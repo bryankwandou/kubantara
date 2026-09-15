@@ -10,7 +10,10 @@ page.setDefaultTimeout(90000);
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
 
-await page.goto("http://localhost:3000/play", { waitUntil: "networkidle" });
+// Jangan menunggu "networkidle": sejak main bersama real-time, halaman ini
+// menanyakan posisi saudara 4x per detik, jadi jaringannya tidak pernah diam.
+await page.goto("http://localhost:3000/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.waitForFunction(() => !!window.__kubantara, { timeout: 120000 });
 const lewati = page.getByRole("button", { name: /Lewati|Ayo main/ });
 if (await lewati.count()) { try { await lewati.first().click(); } catch {} }
 await page.waitForTimeout(3000);

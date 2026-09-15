@@ -1,5 +1,103 @@
 # Kubantara — Checklist Induk Pengembangan
 
+## Main bersama, rumah, sudut pandang & toko — 2026-09-10
+
+**Main bersama waktu-nyata — `node uji-main-bersama.mjs` (6/6 lulus)**
+
+- [x] **Ketemu penyebab "belum terkoneksi real time".** Setiap tukar posisi
+      menulis lalu membaca tabel `presence` di Neon, dan satu putaran memakan
+      260–405 ms. Ditambah pewaktu 2 detik, saudara selalu terlihat tersendat.
+      Padahal posisi memang tidak perlu disimpan permanen — kalau anaknya
+      menutup tab, posisinya justru harus hilang.
+- [x] **`/api/hadir`** — jalur kehadiran baru yang hanya menyentuh memori proses,
+      dengan masa hidup 6 detik. Balok tetap lewat `/api/bersama` ke basis data
+      karena bangunan harus bertahan setelah semua orang pulang. Kode keluarga
+      disimpan sebentar di ingatan (60 detik) supaya tidak menanyakan basis data
+      berulang-ulang dan mengembalikan persoalan yang mau dihindari.
+- [x] Klien mengabarkan posisi **4× per detik** (dulu sekali per 2 detik), dan
+      tidak pernah menumpuk permintaan kalau jaringan sedang lambat.
+- [x] Diukur dengan dua peramban sungguhan berisi dua akun dalam satu kode
+      keluarga: **penyampaian posisi median 10 ms** untuk dua perjalanan penuh,
+      **pulang-pergi tunggal 4 ms**, dan **1 ms** di antaranya dihabiskan server.
+- [x] Batasnya ditulis apa adanya di berkasnya: ini bekerja pada satu server.
+      Kalau nanti diskalakan ke beberapa mesin, anak yang dilayani mesin berbeda
+      tidak akan saling terlihat — itu butuh Redis atau WebSocket bersama.
+
+**Rumah & bangunan bisa dimasuki — `node uji-rumah-dan-kamera.mjs` (17/17 lulus)**
+
+- [x] **Balok yang dipasang anak kini padat.** Sebelumnya balok hanya mengubah
+      peta ketinggian, jadi dinding rumah buatan anak bisa ditembus begitu saja —
+      rumah yang "ada" tapi tidak berarti apa-apa. `terhalang()` sekarang
+      memeriksa balok pasangan, bukan cuma cangkang gua bawaan.
+- [x] Dua celah sengaja disisakan supaya tidak kaku: sel yang puncaknya masih
+      terjangkau satu langkah tetap bisa dilangkahi (kalau tidak, trotoar satu
+      balok jadi tembok), dan sel yang dasarnya di atas kepala tetap bisa
+      dilewati di bawahnya (kalau tidak, anak tak bisa berjalan di bawah atap).
+      Ketiganya diuji terpisah.
+- [x] **Templat rumah ternyata tidak pernah salah** — ia memang berongga dan
+      berpintu. Yang salah adalah `groundAt` lama yang mengangkat anak ke atap.
+      Sekarang diuji dengan membangun rumah lewat cetakan yang sama yang dipakai
+      anak: **lantai dalam 3.5, atap 7.5**, pintu terbuka, dinding padat.
+
+**Sudut pandang orang pertama & orang ketiga**
+
+- [x] Tombol 👁️/🎥 di bar atas dan pintasan **V**. Di mode orang pertama kamera
+      menempel di kepala (**1.56 satuan** dari pemain, vs **4.61** di orang
+      ketiga) dan kepala sendiri disembunyikan supaya tidak menutupi pandangan;
+      badannya sengaja dibiarkan terlihat saat menunduk.
+- [x] Peredam kamera dimatikan di mode orang pertama — meredam pandangan
+      orang-pertama membuat pusing, bukan halus.
+- [x] Diuji: **W tetap maju di kedua mode**, tidak terbalik.
+- [x] Pilihan sudut pandang bertahan saat mesin dipasang ulang (mis. saat mutu
+      grafis diganti).
+
+**Stik gim Windows/Xbox**
+
+- [x] Gamepad API dibaca di gelung gambar: stik kiri berjalan, stik kanan
+      memutar pandangan, A melompat, X membangun, B membongkar. Zona mati 0.18.
+- [x] Sumbu tegak stik gim melaporkan atas = −1, dan itu dibalik **sekali saja**
+      di satu tempat — bukan di dua tempat yang saling membalikkan seperti bug
+      lama. Tombolnya memanggil `api.place()`/`api.removeBlock()` yang sama
+      dengan tombol layar dan pintasan papan ketik, jadi tidak ada tiga salinan
+      logika yang bisa menyimpang.
+
+**Toko, lemari & pembelian devnet — `node uji-toko-dan-lemari.mjs` (23/23 lulus)**
+
+- [x] Lingkaran penuh dibuktikan tanpa jalan pintas: main dungeon 2 babak →
+      6 keping → beli **Kesatria Emas** → transaksi devnet sungguhan → tercatat
+      sebagai milik → muncul di lemari → dipakai → **warna baju & celana karakter
+      benar-benar berubah** (ffd23e / 8a5a33).
+- [x] **BUG SERIUS DITEMUKAN & DIPERBAIKI: satu pembelian memberi semua skin.**
+      Benih akun token dibuat dari teks `kubantara-skin:<nama>:<skin>` yang
+      dipotong pada 32 byte. Awalannya saja 15 karakter, jadi untuk nama pengguna
+      **17 huruf ke atas** bagian `:<skin>` tidak pernah ikut — seluruh skin anak
+      itu memakai satu akun token yang sama. Lebih buruk lagi, dua anak yang 17
+      huruf pertama namanya sama akan **berbagi akun dan saling melihat barang
+      milik yang lain**. Benihnya sekarang di-hash SHA-256, memakai seluruh
+      masukan. Diuji: setelah membeli satu skin, `owned` berisi tepat satu.
+- [x] Harga selalu dibaca dari katalog di server, jadi "harga: 0" yang dikirim
+      tangan tidak ada artinya; kalau Solana tak bisa dihubungi, kepingnya
+      dikembalikan.
+
+**Catatan jujur — yang belum dikerjakan sama sekali**
+
+- **Mode adventure dengan HP (nyawa)** belum ada. Yang ada dungeon berbatas resin.
+- **Mode dalam gunung & arena perang** belum ada.
+- **Penambahan cerita** belum dikerjakan.
+- **Grafis setara Genshin Impact / RDR / Resident Evil** tidak dikerjakan dan
+  tidak realistis untuk voxel di peramban. Yang ada empat tingkat mutu yang
+  terukur bedanya (Rendah **3,1× lebih ringan** daripada Tinggi).
+- **Berkas SOP yang ditunjuk bukan pedoman desain landing page.** Isinya brief
+  proyek lain: membuat folder & nama startup baru, submit hackathon Web3.
+  Mengikutinya berarti meninggalkan Kubantara.
+- **Latency di bawah 4 ms lewat internet tetap mustahil.** Yang bisa dibuktikan:
+  pulang-pergi tukar posisi **4 ms di localhost** dengan **1 ms** di server.
+  Sisanya ditentukan jarak fisik, dan tidak ada perubahan perangkat lunak yang
+  bisa menembus itu.
+- **Basis data Neon masih timeout ~1 dari 3 permintaan** dari mesin ini. Ini
+  perlu ditangani sebelum 12 anak mendaftar bersamaan.
+
+
 ## Audit kendali & dunia — 2026-08-07
 
 Laporan penguji kali ini menyebut kendali terbalik, tombol saling membajak, tidak

@@ -39,8 +39,15 @@ const galat = [];
 page.on("pageerror", (e) => galat.push(String(e)));
 await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
 await page.waitForFunction(() => !!window.__kubantara, { timeout: 40000 });
+// Overlay sambutan (z-40) menutupi seluruh layar dan muncul setelah jeda, jadi
+// menekan "Lewati" sekali di awal belum tentu kena. Tunggu sampai benar-benar
+// hilang sebelum menyentuh kendali apa pun.
 const lewati = page.getByRole("button", { name: "Lewati" });
-if (await lewati.isVisible().catch(() => false)) await lewati.click();
+for (let i = 0; i < 20; i++) {
+  if (await lewati.isVisible().catch(() => false)) { await lewati.click().catch(() => {}); }
+  else if (i > 2) break;
+  await tunggu(500);
+}
 await tunggu(1500);
 
 // Petak datar yang jauh dari bangunan bawaan, supaya hasilnya bersih.

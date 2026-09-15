@@ -5,6 +5,7 @@
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { createAccount, mintTo, getAccount } from "@solana/spl-token";
 import bs58 from "bs58";
+import { createHash } from "node:crypto";
 import mints from "./skin-mints.json";
 
 const RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
@@ -30,11 +31,22 @@ export const explorerTx = (sig: string) => `https://explorer.solana.com/tx/${sig
 export const explorerAddr = (a: string) => `https://explorer.solana.com/address/${a}?cluster=devnet`;
 
 // Akun skin anak: alamat tetap turunan dari nama anak + id skin, pemiliknya guardian.
+//
+// Benihnya di-hash, bukan dipotong. Versi lama menyalin teks
+// `kubantara-skin:<nama>:<skin>` apa adanya ke 32 byte pertama — padahal
+// awalannya saja sudah 15 karakter. Untuk nama pengguna 17 huruf ke atas,
+// bagian `:<skin>` tak pernah ikut terbaca, sehingga SELURUH skin anak itu
+// memakai satu akun token yang sama: membeli satu skin membuat semuanya
+// tampak dimiliki. Dan dua anak yang 17 huruf pertama namanya sama akan
+// berbagi akun — masing-masing melihat barang milik yang lain.
+//
+// SHA-256 memakai seluruh masukan dan selalu menghasilkan tepat 32 byte, jadi
+// panjang nama tidak lagi berpengaruh.
 export function skinAccountKeypair(username: string, skinId: string): Keypair {
-  const enc = new TextEncoder().encode(`kubantara-skin:${username.toLowerCase()}:${skinId}`);
-  const seed = new Uint8Array(32);
-  for (let i = 0; i < enc.length && i < 32; i++) seed[i] = enc[i];
-  return Keypair.fromSeed(seed);
+  const seed = createHash("sha256")
+    .update(`kubantara-skin:${username.toLowerCase()}:${skinId}`)
+    .digest();
+  return Keypair.fromSeed(new Uint8Array(seed));
 }
 
 async function ensureSkinAccount(username: string, skinId: string) {

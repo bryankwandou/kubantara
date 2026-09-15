@@ -38,6 +38,17 @@ export const sfx = {
   jump() {
     tone(320, 0.16, "sine", 0.1, 620);
   },
+  // Terantuk saat jatuh terlalu tinggi di mode petualangan. Sengaja pendek dan
+  // turun nadanya — cukup untuk memberi tahu, tidak cukup untuk menakuti.
+  hurt() {
+    tone(220, 0.14, "sine", 0.1, 130);
+  },
+  // Bangun lagi di tempat aman setelah nyawa habis. Nadanya naik, bukan turun:
+  // ini bukan hukuman, hanya berpindah.
+  bangunLagi() {
+    tone(300, 0.12, "triangle", 0.1);
+    setTimeout(() => tone(460, 0.16, "triangle", 0.1), 110);
+  },
   star() {
     tone(660, 0.1, "triangle", 0.14);
     setTimeout(() => tone(880, 0.14, "triangle", 0.14), 90);
