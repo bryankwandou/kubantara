@@ -58,7 +58,7 @@ async function bukaPermainan(ctx) {
   const page = await ctx.newPage();
   const galat = [];
   page.on("pageerror", (e) => galat.push(String(e)));
-  await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 180000 });
   await page.waitForFunction(() => !!window.__kubantara, { timeout: 120000 });
   const lewati = page.getByRole("button", { name: "Lewati" });
   for (let i = 0; i < 20; i++) {

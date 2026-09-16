@@ -13,7 +13,7 @@ page.setDefaultTimeout(90000);
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
 
-await page.goto("http://localhost:3000/play", { waitUntil: "networkidle" });
+await page.goto((process.env.BASE ?? "http://localhost:3000")+"/play", { waitUntil: "networkidle" });
 // lewati sambutan bila muncul
 const lewati = page.getByRole("button", { name: /Lewati|Ayo main/ });
 if (await lewati.count()) { try { await lewati.first().click(); } catch {} }

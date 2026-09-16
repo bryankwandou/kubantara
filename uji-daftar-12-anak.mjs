@@ -47,7 +47,7 @@ async function tungguReactHidup(page) {
       return !!kotak && Object.keys(kotak).some((k) => k.startsWith("__reactFiber"));
     },
     null,
-    { timeout: 60000 }
+    { timeout: 180000 }
   );
 }
 
@@ -90,7 +90,7 @@ async function seorangAnak(no) {
     // 60 detik, bukan 30: permintaan pertama ke server yang baru bangun ikut
     // menjalankan pembuatan skema, dan 12 anak menabraknya berbarengan.
     await Promise.all([
-      page.waitForURL((u) => !u.pathname.includes("/daftar"), { timeout: 60000 }),
+      page.waitForURL((u) => !u.pathname.includes("/daftar"), { timeout: 180000 }),
       page.getByRole("button", { name: /daftar|buat akun|mulai/i }).first().click(),
     ]);
     catatan.tujuan = new URL(page.url()).pathname;
@@ -100,7 +100,7 @@ async function seorangAnak(no) {
     if (!catatan.tujuan.startsWith("/play")) {
       await page.goto(`${BASE}/play`, { waitUntil: "domcontentloaded" });
     }
-    await page.waitForSelector("canvas", { timeout: 60000 });
+    await page.waitForSelector("canvas", { timeout: 180000 });
     await page.waitForTimeout(5000);
     catatan.tahap = "dunia-termuat";
 

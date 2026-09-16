@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-const B="http://localhost:3000";
+const B=(process.env.BASE ?? "http://localhost:3000")+"";
 const br=await chromium.launch({args:["--use-gl=swiftshader","--enable-unsafe-swiftshader"]});
 const p=await (await br.newContext({viewport:{width:1200,height:700}})).newPage();
 p.on("pageerror",e=>console.log("PAGEERROR:",e.message));

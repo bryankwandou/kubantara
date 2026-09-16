@@ -30,7 +30,7 @@ await ctx.request.post(`${BASE}/api/auth/register`, {
   data: { username: u, email: `${u}@contoh.test`, password: pw, confirm: pw, agreed: true }, timeout: 45000,
 });
 const page = await ctx.newPage();
-await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 180000 });
 await page.waitForFunction(() => !!window.__kubantara, { timeout: 120000 });
 const lewati = page.getByRole("button", { name: "Lewati" });
 for (let i = 0; i < 10; i++) {

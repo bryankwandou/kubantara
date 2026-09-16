@@ -47,7 +47,7 @@ async function ukurMutu(mutu) {
   await ctx.addInitScript((m) => {
     try { localStorage.setItem("kubantara_kualitas", m); } catch {}
   }, mutu);
-  await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 180000 });
   await page.waitForFunction(() => !!window.__kubantara, { timeout: 40000 });
   const lewati = page.getByRole("button", { name: "Lewati" });
   if (await lewati.isVisible().catch(() => false)) await lewati.click();
@@ -111,7 +111,7 @@ await page.getByRole("button", { name: "Pengaturan" }).click();
 // halaman ini merender lewat perangkat lunak & sangat lambat; beri waktu
 await page.waitForFunction(
   () => /\d/.test(document.querySelector('[data-uji="fps"]')?.textContent ?? ""),
-  { timeout: 60000 },
+  { timeout: 180000 },
 ).catch(() => {});
 const fpsTertulis = await page.locator('[data-uji="fps"]').innerText().catch(() => "");
 const latensiTertulis = await page.locator('[data-uji="latensi"]').innerText().catch(() => "");
