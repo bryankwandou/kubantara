@@ -37,7 +37,7 @@ if (!terdaftar) { console.error("tidak bisa mendaftar akun uji"); process.exit(1
 const page = await ctx.newPage();
 const galat = [];
 page.on("pageerror", (e) => galat.push(String(e)));
-await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 180000 });
 await page.waitForFunction(() => !!window.__kubantara, { timeout: 120000 });
 const lewati = page.getByRole("button", { name: "Lewati" });
 for (let i = 0; i < 20; i++) {
@@ -56,6 +56,16 @@ async function jatuhkanDari(tinggi) {
     const p = g.posisi();
     g.taruhDiUdara(p.x, p.z, t);
   }, tinggi);
+  // Tunggu kakinya benar-benar terangkat dulu. Kalau langsung menanyakan
+  // diTanah(), pada perender lambat frame fisika belum sempat jalan sehingga
+  // jawabannya masih "di tanah" dari sebelum teleport — helper ini pulang
+  // sebelum jatuhnya terjadi dan nyawa tampak tidak pernah berkurang.
+  let melayang = false;
+  for (let i = 0; i < 100 && !melayang; i++) {
+    melayang = !(await page.evaluate(() => window.__kubantara.diTanah()));
+    if (!melayang) await tunggu(100);
+  }
+  if (!melayang) return false;
   for (let i = 0; i < 200; i++) {
     const mendarat = await page.evaluate(() => window.__kubantara.diTanah());
     if (mendarat) return true;
@@ -146,11 +156,15 @@ console.log("Pilihan mode di panel Pengaturan");
 {
   await page.getByRole("button", { name: "Pengaturan" }).click();
   await tunggu(2000);
-  await page.locator('[data-uji="mode-santai"]').click();
+  // Ditekan lewat DOM: klik mouse Playwright menunggu requestAnimationFrame
+  // untuk memastikan elemennya diam, dan di perender perangkat lunak loop
+  // render game membuat rAF kelaparan sehingga kliknya time-out sia-sia.
+  const tekan = (sel) => page.evaluate((s) => document.querySelector(s)?.click(), sel);
+  await tekan('[data-uji="mode-santai"]');
   await tunggu(1200);
   const kembali = await page.evaluate(() => window.__kubantara.getNyawa());
   cek("tombol Santai di panel benar-benar mengganti mode", kembali.mode === "santai", kembali.mode);
-  await page.locator('[data-uji="mode-petualangan"]').click();
+  await tekan('[data-uji="mode-petualangan"]');
   await tunggu(1200);
   const lagi = await page.evaluate(() => window.__kubantara.getNyawa());
   cek("tombol Petualangan mengganti kembali", lagi.mode === "petualangan", lagi.mode);

@@ -6,20 +6,21 @@ const browser = await chromium.launch({
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--ignore-gpu-blocklist"],
 });
 const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
-page.setDefaultTimeout(90000);
+page.setDefaultTimeout(180000);
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
 
 // Jangan menunggu "networkidle": sejak main bersama real-time, halaman ini
 // menanyakan posisi saudara 4x per detik, jadi jaringannya tidak pernah diam.
-await page.goto("http://localhost:3000/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.goto((process.env.BASE ?? "http://localhost:3000")+"/play", { waitUntil: "domcontentloaded", timeout: 180000 });
 await page.waitForFunction(() => !!window.__kubantara, { timeout: 120000 });
 const lewati = page.getByRole("button", { name: /Lewati|Ayo main/ });
 if (await lewati.count()) { try { await lewati.first().click(); } catch {} }
 await page.waitForTimeout(3000);
 
 // buka panel, teleport ke mulut gua
-await page.getByRole("button", { name: "🐾" }).click();
+// nama tombol dibaca dari aria-label-nya, bukan emoji di dalamnya
+await page.getByRole("button", { name: /Peliharaan dan jalan pintas/ }).click();
 await page.waitForTimeout(400);
 const gua = page.getByRole("button", { name: /Mulut Gua/ });
 if (!(await gua.count())) { console.log("TOMBOL GUA TIDAK ADA"); }

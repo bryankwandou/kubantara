@@ -20,7 +20,7 @@ page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
 
 // ---- LANDING ----
-await page.goto("http://localhost:3000/", { waitUntil: "networkidle" });
+await page.goto((process.env.BASE ?? "http://localhost:3000")+"/", { waitUntil: "networkidle" });
 await page.waitForTimeout(1500);
 await page.screenshot({ path: `${OUT}/landing-1-hero.png` });
 // gulir perlahan menyusuri seluruh halaman untuk video
@@ -37,7 +37,7 @@ for (let i = 1; i <= steps; i++) {
 await page.waitForTimeout(600);
 
 // ---- GAMEPLAY ----
-await page.goto("http://localhost:3000/play", { waitUntil: "networkidle" });
+await page.goto((process.env.BASE ?? "http://localhost:3000")+"/play", { waitUntil: "networkidle" });
 const lewati = page.getByRole("button", { name: /Lewati|Ayo main/ });
 if (await lewati.count()) { try { await lewati.first().click(); } catch {} }
 await page.waitForTimeout(3000);

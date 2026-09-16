@@ -21,7 +21,7 @@ async function buka(locale, lebar = 1280, tinggi = 800) {
   const ctx = await browser.newContext({ locale, viewport: { width: lebar, height: tinggi } });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => galat.push(String(e)));
-  await page.goto(BASE + "/", { waitUntil: "networkidle", timeout: 60000 });
+  await page.goto(BASE + "/", { waitUntil: "networkidle", timeout: 180000 });
   return { ctx, page };
 }
 const teks = (page) => page.evaluate(() => document.body.innerText);

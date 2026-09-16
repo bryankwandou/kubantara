@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Minimap from "./Minimap";
 import Link from "next/link";
 import { createGame, PALETTE, SHAPES, EMOTES, KUALITAS, type Spell, type GameStats, type Perks, type Blueprint, type Shape, type Kualitas, type SudutPandang, type Mode, NYAWA_MAKS } from "@/lib/voxel-game";
 import { ACHIEVEMENTS, QUESTS, HEROES, SKILLS, levelFromXp } from "@/lib/content";
@@ -323,6 +324,9 @@ export default function PlayPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [musicVol, setMusicVol] = useState(0.5);
   const [sfxVol, setSfxVol] = useState(1);
+  const [kecerahan, setKecerahan] = useState(1);
+  const [temanPeta, setTemanPeta] = useState<{ x: number; z: number }[]>([]);
+  const [kontras, setKontras] = useState(1);
 
   // muat preferensi volume tersimpan
   useEffect(() => {
@@ -331,6 +335,10 @@ export default function PlayPage() {
       const sv = Number(localStorage.getItem("kubantara_sfx_vol"));
       if (isFinite(mv) && localStorage.getItem("kubantara_music_vol") !== null) { setMusicVol(mv); music.setVolume(mv); }
       if (isFinite(sv) && localStorage.getItem("kubantara_sfx_vol") !== null) { setSfxVol(sv); sfx.setVolume(sv); }
+      const kc = Number(localStorage.getItem("kubantara_kecerahan"));
+      const kt = Number(localStorage.getItem("kubantara_kontras"));
+      if (isFinite(kc) && kc > 0) setKecerahan(kc);
+      if (isFinite(kt) && kt > 0) setKontras(kt);
     } catch {}
   }, []);
 
@@ -473,6 +481,16 @@ export default function PlayPage() {
       },
     }, { kualitas, sudutPandang: sudutPandangRef.current, mode: modeRef.current });
     gameRef.current = game;
+    // Kembalikan kecerahan/kontras pilihan pemain. Dipasang di sini, bukan di
+    // efek pemuatan preferensi, karena efek itu berjalan sebelum mesin dunia ada.
+    try {
+      const kc = Number(localStorage.getItem("kubantara_kecerahan"));
+      const kt = Number(localStorage.getItem("kubantara_kontras"));
+      const t: { kecerahan?: number; kontras?: number } = {};
+      if (isFinite(kc) && kc > 0) t.kecerahan = kc;
+      if (isFinite(kt) && kt > 0) t.kontras = kt;
+      if (t.kecerahan || t.kontras) game.setTampilan(t);
+    } catch {}
     // Pegangan untuk uji otomatis (uji-kendali.mjs). Tidak ada rahasia di sini —
     // seluruh isinya sudah berjalan di peramban anak.
     (window as unknown as { __kubantara?: unknown }).__kubantara = game;
@@ -539,6 +557,8 @@ export default function PlayPage() {
         if (!data.enabled) { hadirAktif = false; return; }
         game.setFriends(data.teman ?? []);
         setTeman((data.teman ?? []).length);
+        // dipakai minimap untuk menandai di mana saudara sedang berada
+        setTemanPeta((data.teman ?? []).map((t: { x: number; z: number }) => ({ x: t.x, z: t.z })));
       } catch {
         // sekejap putus bukan alasan berhenti; siklus berikutnya mencoba lagi
       } finally {
@@ -941,7 +961,7 @@ export default function PlayPage() {
       </div>
 
       {!tata.hp && (
-        <div className="pointer-events-none absolute right-3 top-3 hidden max-w-[230px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
+        <div className="pointer-events-none absolute right-3 top-16 hidden max-w-[230px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
           <b>WASD</b> jalan · <b>Spasi</b> lompat · seret mouse untuk melihat sekeliling · scroll zoom.
           <br />
           <b>F</b> bangun · <b>R</b> bongkar · <b>B</b> cetakan · <b>T</b> jinakkan · <b>G</b> naik.
@@ -955,7 +975,7 @@ export default function PlayPage() {
           onClick={() => setMiringDitutup(true)}
           // di bawah palet warna, bukan di atas joystick: di HP kecil posisi
           // bawah menutupi tombol Naik (ketahuan lewat uji-tata-layar.mjs)
-          className="absolute top-48 left-1/2 z-30 w-max max-w-[80vw] -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
+          className="absolute top-52 left-1/2 z-30 w-max max-w-[80vw] -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
         >
           📱↻ Miringkan HP-mu — pulaunya jadi lebih lebar (ketuk untuk menutup)
         </button>
@@ -1352,6 +1372,8 @@ export default function PlayPage() {
       )}
 
       {/* Panel pengaturan: volume musik & efek suara */}
+      <Minimap mesin={() => gameRef.current} saudara={temanPeta} />
+
       {showSettings && (
         <div className="absolute right-3 top-16 z-30 w-64 rounded-2xl bg-white/95 p-4 shadow-xl">
           <div className="mb-3 flex items-center justify-between">
@@ -1380,6 +1402,36 @@ export default function PlayPage() {
                 try { localStorage.setItem("kubantara_sfx_vol", String(v)); } catch {}
               }}
               className="mt-1 w-full accent-emerald-500"
+            />
+          </label>
+
+          <p className="mb-1.5 mt-4 text-xs font-black text-slate-700">🖥️ Tampilan layar</p>
+          <label className="block text-xs font-bold text-slate-600">
+            Kecerahan: {Math.round(kecerahan * 100)}%
+            <input
+              data-uji="kecerahan"
+              type="range" min={0.6} max={1.6} step={0.05} value={kecerahan}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setKecerahan(v);
+                gameRef.current?.setTampilan({ kecerahan: v });
+                try { localStorage.setItem("kubantara_kecerahan", String(v)); } catch {}
+              }}
+              className="mt-1 w-full accent-amber-500"
+            />
+          </label>
+          <label className="mt-3 block text-xs font-bold text-slate-600">
+            Kontras: {Math.round(kontras * 100)}%
+            <input
+              data-uji="kontras"
+              type="range" min={0.7} max={1.5} step={0.05} value={kontras}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setKontras(v);
+                gameRef.current?.setTampilan({ kontras: v });
+                try { localStorage.setItem("kubantara_kontras", String(v)); } catch {}
+              }}
+              className="mt-1 w-full accent-sky-500"
             />
           </label>
 

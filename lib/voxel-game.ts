@@ -187,7 +187,28 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   // membuat cahaya matahari terasa hangat, bukan datar & pucat.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  const PAJANAN_DASAR = 1.08;
+  renderer.toneMappingExposure = PAJANAN_DASAR;
+
+  // Kecerahan & kontras yang bisa diatur pemain. Kecerahan memakai pajanan
+  // tone mapping (benar secara fotografis: sorotan tidak langsung gosong),
+  // kontras memakai filter CSS pada kanvas — gratis, tidak menambah satu pun
+  // lintasan render, jadi HP kelas bawah tidak ikut terbebani.
+  let kecerahan = 1;
+  let kontras = 1;
+  function pasangTampilan() {
+    renderer.toneMappingExposure = PAJANAN_DASAR * kecerahan;
+    // Pajanan saja tidak cukup: pemetaan nada ACES menekan sorotan, jadi
+    // menggeser slider dari 60% ke 160% cuma mengubah layar beberapa persen —
+    // anak menggeser slider dan merasa tidak terjadi apa-apa. Sebagian
+    // kecerahan karena itu dikerjakan lagi sesudah render, memakai akar supaya
+    // tidak menggandakan efek pajanan dan warnanya tidak jadi hangus.
+    const sisaTerang = Math.sqrt(kecerahan);
+    const bagian: string[] = [];
+    if (Math.abs(sisaTerang - 1) > 0.001) bagian.push(`brightness(${sisaTerang.toFixed(3)})`);
+    if (kontras !== 1) bagian.push(`contrast(${kontras})`);
+    canvas.style.filter = bagian.join(" ");
+  }
 
   const scene = new THREE.Scene();
   const skyDay = new THREE.Color(0x8ecfff);
@@ -1755,6 +1776,44 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       };
     },
     padatDi(x: number, y: number, z: number) { return terhalang(x, y, z); },
+
+    // Peta seluruh dunia untuk minimap. Dihitung sekali dan diperkecil, sebab
+    // bentang alamnya tidak berubah — jadi minimap tidak perlu membaca ulang
+    // dunia tiap bingkai, cukup menggambar ulang penanda pemain di atasnya.
+    petaDunia(langkah = 2) {
+      const n = Math.floor(WORLD / langkah);
+      const warna: number[] = new Array(n * n);
+      const tinggi: number[] = new Array(n * n);
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          const x = -HALF + i * langkah;
+          const z = -HALF + j * langkah;
+          const h = terrainHeight(x, z);
+          const temp = smooth(x / 44 + 300, z / 44 + 300);
+          const atas =
+            h <= WATER_LEVEL ? 0x2f8fd6
+            : h > 11 ? layers.snow.color
+            : h > 9 ? layers.stone.color
+            : temp > 0.74 ? layers.sand.color
+            : layers.grass.color;
+          warna[i * n + j] = atas;
+          // tinggi dipakai untuk bayangan lereng supaya bukitnya terbaca
+          tinggi[i * n + j] = Math.max(0, Math.min(255, Math.round(h)));
+        }
+      }
+      return { n, langkah, half: HALF, warna, tinggi };
+    },
+    // Arah hadap pemain, dipakai minimap untuk menggambar kerucut pandang.
+    getYaw() { return yaw; },
+
+    // Kecerahan/kontras layar. Dibatasi ke rentang yang masih terbaca supaya
+    // anak tidak bisa menggelapkan layarnya sampai dunia tak kelihatan lagi.
+    setTampilan(t: { kecerahan?: number; kontras?: number }) {
+      if (typeof t.kecerahan === "number") kecerahan = Math.min(1.6, Math.max(0.6, t.kecerahan));
+      if (typeof t.kontras === "number") kontras = Math.min(1.5, Math.max(0.7, t.kontras));
+      pasangTampilan();
+    },
+    getTampilan() { return { kecerahan, kontras }; },
     pusatGua() { return caveCenters.map((c) => ({ ...c })); },
 
     exportBlocks(): SavedBlock[] {

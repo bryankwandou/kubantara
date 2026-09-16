@@ -50,13 +50,28 @@ async function daftarkan(ctx) {
 }
 
 async function siapkanHalaman(page) {
-  await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 180000 });
   await page.waitForFunction(() => !!window.__kubantara, { timeout: 40000 });
   // Lewati sambutan kalau muncul. Overlay-nya menutupi SELURUH layar (z-40),
   // jadi selama masih tampil tak satu pun kendali bisa disentuh.
-  const lewati = page.getByRole("button", { name: "Lewati" });
-  if (await lewati.isVisible().catch(() => false)) await lewati.click();
-  await page.waitForSelector("text=Selamat datang di Kubantara!", { state: "hidden", timeout: 10000 }).catch(() => {});
+  // Sambutan dipasang oleh useEffect, jadi ia bisa terlambat sedikit dari saat
+  // __kubantara siap. Menanyakan isVisible() sekali lalu jalan terus membuat
+  // tes menguji layar yang tertutup overlay — semua sentuhan ditelan diam-diam.
+  // Jadi: tunggu dulu ia MUNCUL, baru tutup sampai benar-benar lepas.
+  const selubung = page.locator('[class*="inset-0"][class*="z-40"]');
+  await selubung.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+  // Ditekan lewat DOM, bukan klik mouse Playwright. Pemeriksaan "stabil" milik
+  // Playwright menunggu requestAnimationFrame, dan di perender perangkat lunak
+  // loop render game membuat rAF kelaparan sehingga kliknya selalu time-out —
+  // padahal tombolnya sendiri sehat (sudah dibuktikan terpisah).
+  for (let i = 0; i < 110 && (await selubung.count()); i++) {
+    await page.evaluate(() => {
+      const t = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Lewati");
+      t?.click();
+    });
+    await tunggu(1500);
+  }
+  await selubung.waitFor({ state: "detached", timeout: 180000 });
   await tunggu(800); // biar beberapa frame sudah tergambar
 }
 

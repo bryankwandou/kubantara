@@ -35,8 +35,8 @@ if (!terdaftar) { console.error("tidak bisa mendaftar akun uji"); process.exit(1
 
 const json = async (jalur, opsi) => {
   const res = opsi?.method === "POST"
-    ? await ctx.request.post(BASE + jalur, { data: opsi.body, timeout: 60000 })
-    : await ctx.request.get(BASE + jalur, { timeout: 60000 });
+    ? await ctx.request.post(BASE + jalur, { data: opsi.body, timeout: 180000 })
+    : await ctx.request.get(BASE + jalur, { timeout: 180000 });
   return { status: res.status(), data: await res.json().catch(() => null) };
 };
 
@@ -112,7 +112,7 @@ console.log("\nLemari pakaian: memakai skin benar-benar mengubah karakter");
 const page = await ctx.newPage();
 const galat = [];
 page.on("pageerror", (e) => galat.push(String(e)));
-await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 180000 });
 await page.waitForFunction(() => !!window.__kubantara, { timeout: 120000 });
 const lewati = page.getByRole("button", { name: "Lewati" });
 for (let i = 0; i < 20; i++) {

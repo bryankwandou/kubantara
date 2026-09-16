@@ -32,9 +32,10 @@ for (let i = 1; i <= 6 && !terdaftar; i++) {
 if (!terdaftar) { console.error("tidak bisa mendaftar akun uji"); process.exit(1); }
 
 const page = await ctx.newPage();
+page.setDefaultTimeout(180000);
 const galat = [];
 page.on("pageerror", (e) => galat.push(String(e)));
-await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 60000 });
+await page.goto(BASE + "/play", { waitUntil: "domcontentloaded", timeout: 180000 });
 await page.waitForFunction(() => !!window.__kubantara, { timeout: 40000 });
 // Overlay sambutan (z-40) menutupi seluruh layar dan muncul setelah jeda, jadi
 // menekan "Lewati" sekali di awal belum tentu kena. Tunggu sampai benar-benar
