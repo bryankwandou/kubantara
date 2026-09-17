@@ -180,6 +180,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   const jauh = lowEnd ? 0.65 : sedang ? 0.85 : 1;
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd });
+  // tekstur yang dimuat belakangan tidak boleh dipasang ke game yang sudah ditutup
+  let disposed = false;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, tajam));
   renderer.shadowMap.enabled = !lowEnd;
   renderer.shadowMap.type = ultra ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
@@ -465,6 +467,45 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     mesh.castShadow = key === "wood" || key === "leaf";
     mesh.receiveShadow = true;
     scene.add(mesh);
+    if (!lowEnd) pasangTeksturFoto(key, mesh.material as THREE.MeshLambertMaterial);
+  }
+
+  // Tekstur foto CC0 dari Poly Haven (public/tekstur). Warnanya dibuang dan
+  // diganti "detail terang-gelap" yang rata-ratanya 1, lalu dikali warna balok:
+  // palet cerah untuk anak tetap, tapi permukaannya kini punya serat batu,
+  // kayu, dan rumput sungguhan. Dimuat belakangan; kalau gagal, balok tetap
+  // polos seperti sebelumnya. HP spek rendah tidak memuatnya sama sekali.
+  function pasangTeksturFoto(jenis: Biome, bahan: THREE.MeshLambertMaterial) {
+    const img = new Image();
+    img.onload = () => {
+      if (disposed) return;
+      const sisi = sedang ? 256 : 512;
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = sisi;
+      const g2 = cv.getContext("2d", { willReadFrequently: true });
+      if (!g2) return;
+      g2.drawImage(img, 0, 0, sisi, sisi);
+      const data = g2.getImageData(0, 0, sisi, sisi);
+      const px = data.data;
+      let total = 0;
+      for (let i = 0; i < px.length; i += 4) total += px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+      const rata = total / (px.length / 4) || 1;
+      for (let i = 0; i < px.length; i += 4) {
+        const l = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) / rata;
+        // kontras dilunakkan supaya tetap ramah anak, bukan kusam
+        const v = Math.max(0, Math.min(255, Math.round(255 * (0.82 + (l - 1) * 0.55))));
+        px[i] = px[i + 1] = px[i + 2] = v;
+      }
+      g2.putImageData(data, 0, 0);
+      const tex = new THREE.CanvasTexture(cv);
+      // pengali terang-gelap, bukan warna: dibaca apa adanya (linear)
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      bahan.map = tex;
+      bahan.color.setScalar(1.18); // imbangi rata-rata 0,82 di atas
+      bahan.needsUpdate = true;
+    };
+    img.src = `/tekstur/${jenis}.jpg`;
   }
 
   // ---------- air: permukaan danau & laut ----------
@@ -1021,6 +1062,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   let stepSign = 0;    // tanda ayunan kaki terakhir, untuk memicu bunyi langkah
   // sudut naik-turun kamera & zoom, dikendalikan mouse (anak main di laptop)
   let camPitch = 0.62;      // 0 = datar, ~1.4 = dari atas
+  let mataY = Number.NaN;   // tinggi pemain yang sudah diredam, untuk kamera
   let camZoom = 1;          // pengali jarak kamera dari scroll
   // seret mouse untuk memutar pandangan, seperti Minecraft/Roblox
   let dragging = false, lastMx = 0, lastMy = 0;
@@ -1122,8 +1164,12 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     // Waktu nyata untuk hal yang dijanjikan dalam detik ke anak (pulihnya nyawa).
     // dt di bawah dibatasi supaya fisika stabil, jadi di HP lambat ia berjalan
     // lebih pelan dari jam — nyawa jangan ikut melambat karenanya.
-    const dtNyata = Math.min((now - lastTime) / 1000, 1);
-    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    // Selang juga dijaga tidak negatif: jam halaman bisa mundur (tab yang
+    // dibangunkan lagi, jam yang disetel ulang), dan peredam eksponensial
+    // dengan selang negatif meledak — kamera sempat terlempar ke 10^53.
+    const selangDetik = Math.max(0, (now - lastTime) / 1000);
+    const dtNyata = Math.min(selangDetik, 1);
+    const dt = Math.min(selangDetik, 0.05);
     lastTime = now;
     // Rata-rata bergerak waktu satu bingkai. Inilah angka yang benar-benar
     // menentukan terasa lancar atau patah-patah — bukan latency jaringan.
@@ -1431,6 +1477,20 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     // keyboard Q/E tetap ada untuk yang tanpa mouse; mouse mengatur yaw & pitch
     if (keys.KeyQ) camYaw += dt * 2;
     if (keys.KeyE) camYaw -= dt * 2;
+    // Tinggi mata diredam terpisah dari tinggi pemain. Naik satu balok
+    // memindahkan pemain sampai 1,6 satuan dalam SATU bingkai; kalau kamera
+    // ikut tinggi mentah itu, tiap anak tangga dan tiap lereng terasa
+    // patah-patah. Naik diredam cepat (tetap terasa sigap), turun sedikit
+    // lebih cepat lagi supaya jatuh tidak terasa melayang. Kalau selisihnya
+    // besar (teleport, bangun lagi) langsung disamakan.
+    {
+      const selisih = player.position.y - mataY;
+      if (!Number.isFinite(mataY) || Math.abs(selisih) > 6) mataY = player.position.y;
+      else mataY += selisih * (1 - Math.exp(-dtNyata * (selisih > 0 ? 14 : 20)));
+    }
+    // redaman kamera berbasis waktu, bukan per bingkai: sama halusnya di 30 fps
+    // maupun 144 fps
+    const halus = 1 - Math.exp(-dtNyata * 7.5);
     if (sudutPandang === "orang-pertama") {
       // Dari mata anak. Kamera menempel di kepala tanpa peredam — meredam
       // pandangan orang-pertama membuat pusing, bukan halus.
@@ -1439,7 +1499,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       const datar = Math.cos(lihat);
       camera.position.set(
         player.position.x + Math.sin(camYaw) * 0.15,
-        player.position.y + 1.55,
+        mataY + 1.55,
         player.position.z + Math.cos(camYaw) * 0.15,
       );
       camera.lookAt(
@@ -1458,7 +1518,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       // posisi kamera yang diinginkan; begitu menyentuh tanah, kamera berhenti
       // sebelum titik itu. Di pegunungan tanpa ini layar berubah gelap total
       // karena kamera berada di dalam balok batu.
-      const kepalaY = player.position.y + 1.5;
+      const kepalaY = mataY + 1.5;
       const tujuan = new THREE.Vector3(cx, kepalaY + vert, cz);
       const langkahCek = 0.3;
       const panjang = Math.hypot(cx - player.position.x, vert, cz - player.position.z);
@@ -1479,11 +1539,15 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
         );
         // mendekat seketika (tidak boleh sempat terlihat dari dalam tanah),
         // menjauh lagi tetap diredam supaya tidak tersentak
+        // Mendekat cepat (tidak boleh lama terlihat dari dalam tanah) tapi
+        // tetap diredam: memanjat lereng membuat penghalang ini muncul-hilang
+        // tiap langkah, dan loncatan seketika bolak-balik itulah yang dulu
+        // terasa patah-patah.
         const sekarang = camera.position.distanceTo(player.position);
-        if (tujuan.distanceTo(player.position) < sekarang) camera.position.copy(tujuan);
-        else camera.position.lerp(tujuan, 0.12);
-      } else camera.position.lerp(tujuan, 0.12);
-      camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
+        const mendekat = tujuan.distanceTo(player.position) < sekarang;
+        camera.position.lerp(tujuan, mendekat ? 1 - Math.exp(-dtNyata * 30) : halus);
+      } else camera.position.lerp(tujuan, halus);
+      camera.lookAt(player.position.x, kepalaY, player.position.z);
     }
 
     // ----- bintang: berputar, mengambang naik-turun & berdenyut memikat -----
@@ -1718,6 +1782,13 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     // Jarak kamera ke pemain — dipakai uji untuk memastikan mode orang-pertama
     // benar-benar menempel di kepala, bukan sekadar label yang berganti.
     jarakKamera() { return camera.position.distanceTo(player.position); },
+    // Tinggi kamera & arah tunduknya — dipakai uji untuk mengukur apakah
+    // kamera tersentak saat pemain naik-turun balok.
+    kamera() {
+      const arah = new THREE.Vector3();
+      camera.getWorldDirection(arah);
+      return { y: camera.position.y, tunduk: Math.asin(arah.y), pemainY: player.position.y };
+    },
     // Memindahkan pemain seketika. Dipakai uji untuk mengukur jeda main
     // bersama tanpa harus menunggu ia berjalan ke sana.
     pindah(x: number, z: number) {
@@ -2060,6 +2131,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       return caveCenters.length;
     },
     dispose() {
+      disposed = true;
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);

@@ -23,7 +23,10 @@ export interface Dompet {
 }
 
 function hitungResin(base: number, sejak: Date) {
-  const lewat = Math.floor((Date.now() - sejak.getTime()) / 1000);
+  // resin_at dicatat oleh jam Postgres, Date.now() oleh jam server web. Kalau
+  // jam database sedikit di depan, selisihnya negatif dan floor(-0,x) = -1:
+  // akun baru terbaca 59 resin, bukan 60. Selisih negatif dianggap nol.
+  const lewat = Math.max(0, Math.floor((Date.now() - sejak.getTime()) / 1000));
   const dapat = Math.floor(lewat / RESIN_REGEN_DETIK);
   const resin = Math.min(RESIN_MAX, base + dapat);
   const berikut = resin >= RESIN_MAX ? 0 : RESIN_REGEN_DETIK - (lewat % RESIN_REGEN_DETIK);

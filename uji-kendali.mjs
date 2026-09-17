@@ -297,7 +297,7 @@ const browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable
     `${sebelum.height} → ${sesudah.height}`);
   cek("stik tetap muat setelah diputar", sesudah.y + sesudah.height <= 391);
 
-  const kanvas = await page.locator("canvas").boundingBox();
+  const kanvas = await page.locator("canvas:not([data-uji])").boundingBox();
   cek("kanvas ikut melebar setelah diputar", kanvas.width > 700, `lebar=${Math.round(kanvas.width)}`);
 
   // dan permainan masih hidup — bukan layar biru WebGL yang mati

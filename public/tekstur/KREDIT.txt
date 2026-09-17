@@ -1,0 +1,10 @@
+Tekstur di folder ini berasal dari Poly Haven (https://polyhaven.com), lisensi CC0.
+Versi 1K diffuse, diunduh 17 September 2026.
+
+grass.jpg  leafy_grass
+dirt.jpg   brown_mud_02
+sand.jpg   aerial_beach_01
+stone.jpg  rock_face_03
+wood.jpg   bark_brown_02
+leaf.jpg   forest_leaves_02
+snow.jpg   snow_02

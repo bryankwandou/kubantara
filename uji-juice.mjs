@@ -9,7 +9,7 @@ const b=p.locator("button",{hasText:/Lewati/}).first();
 if(await b.isVisible().catch(()=>false)) await b.click();
 await p.waitForTimeout(800);
 // dekatkan kamera dari atas biar karakter jelas terlihat
-await p.locator("canvas").click({position:{x:600,y:350}});
+await p.locator("canvas:not([data-uji])").click({position:{x:600,y:350}});
 // pasang beberapa balok (lihat percik) lalu bangun bintang buatan? cukup bangun.
 for(let i=0;i<3;i++){ await p.locator("button",{hasText:/^Bangun/}).click(); await p.waitForTimeout(300); }
 await p.screenshot({path:"uji-hasil/juice-1-bangun.png"});
