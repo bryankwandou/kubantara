@@ -8,6 +8,8 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
+import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clone as klonKerangka } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { sfx } from "./sound";
 
 // 192 × 192 petak. Pulau lama (112) tetap utuh di tengah; tambahan lebarnya
@@ -756,10 +758,97 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     g.add(head, neck, body, armL, armR, legL, legR);
     return { g, head, armL, armR, legL, legR, shirt, pants };
   }
+  // ---------- model CC0 Kenney ----------
+  // Kotak-kotak buatan tangan tetap dibuat lebih dulu dan tetap dipakai untuk
+  // semua gerak & uji. Model hanya ditempel di grup yang sama setelah selesai
+  // diunduh, lalu kotaknya disembunyikan. Kalau unduhan gagal (jaringan
+  // putus, file hilang), anak tetap bermain dengan kotak lama.
+  const KARAKTER = ["male-a", "female-a", "male-b", "female-b", "male-c", "female-c",
+    "male-d", "female-d", "male-e", "female-e", "male-f", "female-f"];
+  // Ikan sengaja tidak dipakai: satwa berjalan di darat.
+  const SATWA = ["bunny", "cat", "chick", "cow", "deer", "dog", "fox", "hog", "koala",
+    "lion", "monkey", "panda", "parrot", "penguin", "pig", "polar", "tiger", "beaver",
+    "bee", "caterpillar", "crab", "elephant", "giraffe"];
+  const pemuatModel = new GLTFLoader();
+  const simpananModel = new Map<string, Promise<{ gltf: GLTF; skala: number; dasar: number } | null>>();
+  function muatModel(url: string, tinggi: number) {
+    const kunci = url + "@" + tinggi;
+    let janji = simpananModel.get(kunci);
+    if (!janji) {
+      janji = pemuatModel.loadAsync(url).then((gltf) => {
+        gltf.scene.updateMatrixWorld(true);
+        const kotak = new THREE.Box3().setFromObject(gltf.scene, true);
+        const skala = tinggi / Math.max(0.01, kotak.max.y - kotak.min.y);
+        return { gltf, skala, dasar: -kotak.min.y * skala };
+      }).catch(() => null);
+      simpananModel.set(kunci, janji);
+    }
+    return janji;
+  }
+  type Rupa = {
+    akar: THREE.Object3D | null;
+    mixer: THREE.AnimationMixer | null;
+    aksi: Map<string, THREE.AnimationAction>;
+    kini: string;
+    minta: number; // nomor permintaan terakhir, supaya unduhan lama tidak menimpa yang baru
+  };
+  const semuaRupa = new Set<Rupa>();
+  function rupaBaru(): Rupa {
+    const r: Rupa = { akar: null, mixer: null, aksi: new Map(), kini: "", minta: 0 };
+    semuaRupa.add(r);
+    return r;
+  }
+  function gerakRupa(r: Rupa, nama: string) {
+    if (r.kini === nama) return;
+    const lama = r.aksi.get(r.kini);
+    r.kini = nama;
+    const baru = r.aksi.get(nama) ?? r.aksi.get("idle");
+    if (!baru || baru === lama) return;
+    baru.reset();
+    if (nama === "jump") { baru.setLoop(THREE.LoopOnce, 1); baru.clampWhenFinished = true; }
+    baru.setEffectiveWeight(1).fadeIn(0.18).play();
+    lama?.fadeOut(0.18);
+  }
+  function pasangRupa(r: Rupa, grup: THREE.Object3D, url: string, tinggi: number, kotakLama: THREE.Object3D[]) {
+    const nomor = ++r.minta;
+    muatModel(url, tinggi).then((m) => {
+      if (!m || disposed || nomor !== r.minta) return;
+      const akar = klonKerangka(m.gltf.scene);
+      akar.scale.setScalar(m.skala);
+      akar.position.y = m.dasar;
+      akar.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = !lowEnd;
+          // kerangka yang beranimasi bisa keluar dari kotak batas aslinya
+          mesh.frustumCulled = false;
+        }
+      });
+      if (r.akar) grup.remove(r.akar);
+      r.mixer?.stopAllAction();
+      r.akar = akar;
+      r.mixer = new THREE.AnimationMixer(akar);
+      r.aksi.clear();
+      for (const klip of m.gltf.animations) r.aksi.set(klip.name, r.mixer.clipAction(klip));
+      const lanjut = r.kini || "idle";
+      r.kini = "";
+      grup.add(akar);
+      for (const k of kotakLama) k.visible = false;
+      gerakRupa(r, lanjut);
+      if (r === rupaPemain && sudutPandang !== "orang-ketiga") api.setSudutPandang(sudutPandang);
+    });
+  }
+  const urlKarakter = (i: number) =>
+    `/model/karakter/character-${KARAKTER[((i % KARAKTER.length) + KARAKTER.length) % KARAKTER.length]}.glb`;
+  const urlSatwa = (nama: string) => `/model/satwa/animal-${nama}.glb`;
+
   const kid = buildKid();
   const player = kid.g;
   player.position.set(spawn.x, groundAt(spawn.x, spawn.z), spawn.z);
   scene.add(player);
+  const rupaPemain = rupaBaru();
+  const kotakPemain = player.children.slice();
+  pasangRupa(rupaPemain, player, urlKarakter(0), 1.85, kotakPemain);
 
   // preview blok (hantu)
   const ghost = new THREE.Mesh(
@@ -796,11 +885,12 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       g.add(leg);
     }
     g.add(body, head);
-    return { g, legs };
+    return { g, legs, rupa: rupaBaru(), kotak: [body, head, ...legs] as THREE.Object3D[] };
   }
 
   // hewan peliharaan (mengikuti pemain)
   const pet = buildCritter(0xf4a340, 0.5, 0.4, 0.7);
+  pasangRupa(pet.rupa, pet.g, urlSatwa("dog"), 0.9, pet.kotak);
   pet.g.position.set(spawn.x + 2, groundAt(spawn.x + 2, spawn.z + 1), spawn.z + 1);
   scene.add(pet.g);
   // rasa kenyang & lonjakan senang saat diberi makan
@@ -823,6 +913,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
 
   // tunggangan (bisa dinaiki)
   const mount = buildCritter(0xb5651d, 1.1, 1.0, 1.6);
+  pasangRupa(mount.rupa, mount.g, urlSatwa("deer"), 1.9, mount.kotak);
   const mountStart = new THREE.Vector3(spawn.x + 6, 0, spawn.z + 4);
   mountStart.y = groundAt(mountStart.x, mountStart.z);
   mount.g.position.copy(mountStart);
@@ -836,9 +927,13 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
   }[] = [];
   const heartGeo = new THREE.OctahedronGeometry(0.16);
   const heartMat = new THREE.MeshBasicMaterial({ color: 0xff6b9d });
-  for (let i = 0; i < 8; i++) {
+  // 8 ekor pertama sama seperti dulu; perangkat yang kuat mendapat satu
+  // ekor untuk setiap jenis satwa Kenney.
+  const jumlahSatwa = lowEnd ? 8 : SATWA.length;
+  for (let i = 0; i < jumlahSatwa; i++) {
     const col = [0xffffff, 0xdddddd, 0xf7c59f, 0x9ad1f5][i % 4];
     const c = buildCritter(col, 0.4, 0.3, 0.55);
+    pasangRupa(c.rupa, c.g, urlSatwa(SATWA[i % SATWA.length]), 0.8, c.kotak);
     const x = Math.floor((hash(i, 5) - 0.5) * (PULAU - 20));
     const z = Math.floor((hash(i, 9) - 0.5) * (PULAU - 20));
     c.g.position.set(x, groundAt(x, z), z);
@@ -874,6 +969,10 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     g.add(body, head, marker);
     g.position.set(d.x, groundAt(d.x, d.z), d.z);
     scene.add(g);
+    // Kakek/Pak/Bang memakai model laki-laki, Bu/Adik/Nini perempuan.
+    const perempuan = /^(Bu|Adik|Nini)\b/.test(d.name);
+    const urutan = NPC_DATA.indexOf(d);
+    pasangRupa(rupaBaru(), g, urlKarakter(2 * (urutan + 1) + (perempuan ? 1 : 0)), 1.85, [body, head]);
     return { ...d, g, marker, met: false };
   });
   let activeNpc: string | null = null;
@@ -1150,6 +1249,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       c.legs[0].rotation.x = sw; c.legs[3].rotation.x = sw;
       c.legs[1].rotation.x = -sw; c.legs[2].rotation.x = -sw;
     }
+    gerakRupa(c.rupa, dist > 0.05 ? (speed > 4 ? "run" : "walk") : "idle");
     c.g.position.y = groundAt(c.g.position.x, c.g.position.z);
     return dist;
   }
@@ -1170,6 +1270,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     const selangDetik = Math.max(0, (now - lastTime) / 1000);
     const dtNyata = Math.min(selangDetik, 1);
     const dt = Math.min(selangDetik, 0.05);
+    for (const r of semuaRupa) r.mixer?.update(dt);
     lastTime = now;
     // Rata-rata bergerak waktu satu bingkai. Inilah angka yang benar-benar
     // menentukan terasa lancar atau patah-patah — bukan latency jaringan.
@@ -1402,6 +1503,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     const sw = Math.sin(walk) * 0.6 * Math.min(1, len);
     kid.legL.rotation.x = sw; kid.legR.rotation.x = -sw;
     kid.armL.rotation.x = -sw; kid.armR.rotation.x = sw;
+    gerakRupa(rupaPemain, riding ? "sit" : !onGround ? "jump" : moving ? (perks.speedMul > 1.2 ? "sprint" : "walk") : "idle");
 
     // bunyi langkah kaki: picu tiap ayunan kaki melewati titik tengah, hanya
     // saat benar-benar berjalan di tanah (bukan melompat / diam).
@@ -1826,7 +1928,13 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       // Di mode orang-pertama kepala sendiri persis menutupi kamera. Badannya
       // sengaja dibiarkan terlihat supaya anak tetap melihat tangan & kakinya
       // saat menunduk — itu yang membuat tubuhnya terasa miliknya.
-      kid.head.visible = s === "orang-ketiga";
+      kid.head.visible = s === "orang-ketiga" && !rupaPemain.akar;
+      // Model Kenney tidak terpisah per bagian, jadi di orang-pertama seluruh
+      // model disembunyikan dan badan kotak yang ditampilkan sebagai gantinya.
+      if (rupaPemain.akar) {
+        rupaPemain.akar.visible = s === "orang-ketiga";
+        for (const k of kotakPemain) if (k !== kid.head) k.visible = s !== "orang-ketiga";
+      }
       return sudutPandang;
     },
     // Kelancaran sungguhan: berapa bingkai per detik yang benar-benar tergambar,
@@ -2118,6 +2226,8 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     setHero(shirtHex: number, pantsHex: number) {
       kid.shirt.color.setHex(shirtHex);
       kid.pants.color.setHex(pantsHex);
+      // tiap warna pahlawan/skin mendapat rupa karakter yang tetap
+      pasangRupa(rupaPemain, player, urlKarakter((shirtHex ^ (pantsHex >>> 3)) % KARAKTER.length), 1.85, kotakPemain);
     },
     // React memanggil ini setelah resin dibayar: buka gua agar kristalnya bisa
     // dikumpulkan. Denyut cahaya kecil sebagai tanda dungeon aktif.

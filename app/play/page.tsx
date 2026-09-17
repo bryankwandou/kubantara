@@ -975,7 +975,7 @@ export default function PlayPage() {
           onClick={() => setMiringDitutup(true)}
           // di bawah palet warna, bukan di atas joystick: di HP kecil posisi
           // bawah menutupi tombol Naik (ketahuan lewat uji-tata-layar.mjs)
-          className="absolute top-52 left-1/2 z-30 w-max max-w-[80vw] -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
+          className="absolute top-60 left-1/2 z-30 w-max max-w-[50vw] -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
         >
           📱↻ Miringkan HP-mu — pulaunya jadi lebih lebar (ketuk untuk menutup)
         </button>
@@ -1078,10 +1078,13 @@ export default function PlayPage() {
       <div
         className={
           tata.baring
-            ? "absolute right-3 top-1/2 grid -translate-y-1/2 grid-cols-2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow"
+            // geser ke kiri minimap (lebar ≤112px di right-3), jangan di bawahnya
+            ? "absolute right-32 top-1/2 grid -translate-y-1/2 grid-cols-2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow"
             // HP tegak: bar status membungkus jadi tiga baris (~138px), jadi
             // palet diletakkan di bawahnya; di layar lebar bar hanya satu baris.
-            : "absolute left-1/2 top-36 sm:top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5"
+            // minimap tegak menempati top-16 s/d ±180px di kanan; palet 8 warna
+            // selebar ±264px pasti menabraknya kalau diletakkan di atas itu.
+            : "absolute left-1/2 top-48 sm:top-14 flex -translate-x-1/2 gap-1 rounded-2xl bg-white/80 p-1.5 shadow sm:gap-1.5"
         }
       >
         {PALETTE.map((p, i) => (
@@ -1089,6 +1092,7 @@ export default function PlayPage() {
             key={p.name}
             onClick={() => pickColor(i)}
             title={p.name}
+            aria-label={`Warna ${p.name}`}
             className={`rounded-lg border-2 transition-transform hover:scale-110 ${
               tata.baring ? "h-6 w-6" : "h-7 w-7 sm:h-8 sm:w-8"
             } ${colorIdx === i ? "border-slate-900 scale-110" : "border-white/60"}`}
