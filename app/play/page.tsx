@@ -961,7 +961,7 @@ export default function PlayPage() {
       </div>
 
       {!tata.hp && (
-        <div className="pointer-events-none absolute right-3 top-16 hidden max-w-[230px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
+        <div className="pointer-events-none absolute right-[140px] top-16 hidden max-w-[230px] rounded-xl bg-white/70 px-3 py-2 text-xs leading-relaxed text-slate-700 shadow md:block">
           <b>WASD</b> jalan · <b>Spasi</b> lompat · seret mouse untuk melihat sekeliling · scroll zoom.
           <br />
           <b>F</b> bangun · <b>R</b> bongkar · <b>B</b> cetakan · <b>T</b> jinakkan · <b>G</b> naik.
@@ -975,9 +975,12 @@ export default function PlayPage() {
           onClick={() => setMiringDitutup(true)}
           // di bawah palet warna, bukan di atas joystick: di HP kecil posisi
           // bawah menutupi tombol Naik (ketahuan lewat uji-tata-layar.mjs)
-          className="absolute top-60 left-1/2 z-30 w-max max-w-[50vw] -translate-x-1/2 rounded-2xl bg-slate-900/85 px-4 py-2 text-xs font-bold text-white shadow-xl backdrop-blur"
+          aria-label="Miringkan HP supaya pulau terlihat lebih lebar. Ketuk untuk menutup."
+          // Satu baris pendek tepat di bawah palet (top-48 + 40px): di HP kecil
+          // kolom sihir & aksi dimulai ±250px, jadi teks panjang menimpanya.
+          className="absolute top-[236px] left-1/2 z-30 w-max -translate-x-1/2 rounded-full bg-slate-900/85 px-3 py-1 text-xs font-bold text-white shadow-xl backdrop-blur"
         >
-          📱↻ Miringkan HP-mu — pulaunya jadi lebih lebar (ketuk untuk menutup)
+          📱↻ Miringkan HP ✕
         </button>
       )}
 
