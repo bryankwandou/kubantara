@@ -50,3 +50,4 @@ jobs:
             hasil/
             server.log
             _*.png
+            uji-hasil/

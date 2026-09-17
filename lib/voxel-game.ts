@@ -1923,6 +1923,13 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     getHero() {
       return { shirt: kid.shirt.color.getHex(), pants: kid.pants.color.getHex() };
     },
+    // Berapa model Kenney yang sudah benar-benar menggantikan kotak, dan
+    // animasi apa yang sedang dimainkan pemain. Dipakai uji-model.mjs.
+    modelTerpasang() {
+      let terpasang = 0;
+      for (const r of semuaRupa) if (r.akar) terpasang++;
+      return { terpasang, total: semuaRupa.size, animasiPemain: rupaPemain.kini, pemainBerModel: !!rupaPemain.akar };
+    },
     setSudutPandang(s: SudutPandang) {
       sudutPandang = s;
       // Di mode orang-pertama kepala sendiri persis menutupi kamera. Badannya
