@@ -984,7 +984,7 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
     pelaut: 0x1982c4, "penjaga-fajar": 0xffca3a, "bayangan-baik": 0x2b2d42,
   };
   const friends = new Map<string, {
-    g: THREE.Group; target: THREE.Vector3; bubble: THREE.Sprite | null; bubbleUntil: number;
+    g: THREE.Group; target: THREE.Vector3; bubble: THREE.Sprite | null; bubbleUntil: number; rupa: Rupa;
   }>();
 
   // Gelembung emote digambar ke kanvas lalu dipakai sebagai tekstur sprite.
@@ -1560,8 +1560,12 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
 
     // ----- saudara sekeluarga: geser halus ke posisi terbaru dari server -----
     for (const e of friends.values()) {
+      const jx = e.target.x - e.g.position.x, jz = e.target.z - e.g.position.z;
+      const berjalan = Math.hypot(jx, jz) > 0.08;
       e.g.position.lerp(e.target, Math.min(1, dt * 4));
-      e.g.rotation.y += dt * 0.6; // berputar pelan agar terlihat hidup
+      if (!e.rupa.akar) e.g.rotation.y += dt * 0.6; // kotak berputar pelan agar terlihat hidup
+      else if (berjalan) e.g.rotation.y = Math.atan2(jx, jz);
+      gerakRupa(e.rupa, berjalan ? "walk" : "idle");
       if (e.bubble && e.bubble.visible) {
         if (t > e.bubbleUntil) e.bubble.visible = false;
         else e.bubble.position.y = 2.6 + Math.sin(t * 4) * 0.1;
@@ -2066,8 +2070,12 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
           g.add(body, head, tag);
           g.position.set(f.x, f.y, f.z);
           scene.add(g);
-          e = { g, target: new THREE.Vector3(f.x, f.y, f.z), bubble: null, bubbleUntil: 0 };
+          e = { g, target: new THREE.Vector3(f.x, f.y, f.z), bubble: null, bubbleUntil: 0, rupa: rupaBaru() };
           friends.set(f.username, e);
+          // rupa tetap per nama, jadi saudara yang sama selalu terlihat sama
+          let h = 0;
+          for (const ch of f.username) h = (h * 31 + ch.charCodeAt(0)) | 0;
+          pasangRupa(e.rupa, g, urlKarakter(Math.abs(h)), 1.85, [body, head]);
         }
         e.target.set(f.x, f.y, f.z);
         // emote tampil 4 detik lalu hilang sendiri
@@ -2090,6 +2098,9 @@ export function createGame(canvas: HTMLCanvasElement, hooks: GameHooks, opsi: Ga
       for (const [name, e] of friends) {
         if (seen.has(name)) continue;
         scene.remove(e.g);
+        e.rupa.mixer?.stopAllAction();
+        e.rupa.minta++; // batalkan unduhan yang belum selesai
+        semuaRupa.delete(e.rupa);
         friends.delete(name);
       }
     },
