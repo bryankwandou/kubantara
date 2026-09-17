@@ -1,7 +1,14 @@
 // Koneksi Neon Postgres (serverless) + inisialisasi skema.
 import { neon } from "@neondatabase/serverless";
 
-export const sql = neon(process.env.DATABASE_URL!);
+// neon() menolak dipanggil tanpa alamat, dan modul ini ikut dimuat saat
+// `next build` mengumpulkan data halaman. Tanpa cadangan, build di CI yang
+// tidak punya rahasia database gagal total. neon() belum menyambung apa pun
+// sampai ada kueri, jadi alamat cadangan ini hanya membuat kueri pertama
+// gagal dengan jelas kalau DATABASE_URL memang tidak diisi.
+export const sql = neon(
+  process.env.DATABASE_URL || "postgresql://tanpa-database:tanpa-database@tanpa-database.invalid/tanpa-database",
+);
 
 let ready: Promise<void> | null = null;
 
